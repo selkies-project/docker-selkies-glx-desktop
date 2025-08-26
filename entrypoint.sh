@@ -94,7 +94,7 @@ else
   export GPU_SELECT="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n1)"
 fi
 
-if [ -z "${GPU_SELECT}" ]; then
+if [ -z "${GPU_SELECT}" ] || [[ "${GPU_SELECT}" == "No devices were found" ]]; then
   export GPU_SELECT="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n1)"
   if [ -z "${GPU_SELECT}" ]; then
     echo "No NVIDIA GPUs detected or NVIDIA Container Toolkit not configured. Exiting."
