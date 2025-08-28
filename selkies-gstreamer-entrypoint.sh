@@ -62,7 +62,7 @@ if command -v nvidia-smi &> /dev/null && nvidia-smi >/dev/null 2>&1; then
   fi
   echo "Selected NVRTC archive: ${NVRTC_ARCHIVE}"
   GST_ARCH="$(dpkg --print-architecture | sed -e 's/arm64/aarch64-linux-gnu/' -e 's/armhf/arm-linux-gnueabihf/' -e 's/riscv64/riscv64-linux-gnu/' -e 's/ppc64el/powerpc64le-linux-gnu/' -e 's/s390x/s390x-linux-gnu/' -e 's/i.*86/i386-linux-gnu/' -e 's/amd64/x86_64-linux-gnu/' -e 's/unknown/x86_64-linux-gnu/')"
-  cd /tmp && curl -fsSL "${NVRTC_URL}${NVRTC_ARCHIVE}" | tar -xJf - -C /tmp && mv -f cuda_nvrtc* cuda_nvrtc && cd cuda_nvrtc/lib && chmod -f 755 libnvrtc* && rm -f "/opt/gstreamer/lib/${GST_ARCH}/"libnvrtc* && mv -f libnvrtc* "/opt/gstreamer/lib/${GST_ARCH}/" && cd /tmp && rm -rf /tmp/cuda_nvrtc
+  cd /tmp && curl -fsSL "${NVRTC_URL}${NVRTC_ARCHIVE}" | tar -xJf - -C /tmp && mv -f cuda_nvrtc* cuda_nvrtc && cd cuda_nvrtc/lib && chmod -f 755 libnvrtc* && rm -f "/opt/gstreamer/lib/${GST_ARCH}/"libnvrtc* && mv -f libnvrtc* "/opt/gstreamer/lib/${GST_ARCH}/" && cd /tmp && rm -rf /tmp/cuda_nvrtc && cd "${HOME}"
 fi
 
 # Wait for X server to start
