@@ -140,10 +140,15 @@ ln -snf /dev/ptmx /dev/tty7 || sudo-root ln -snf /dev/ptmx /dev/tty7 || echo 'Fa
 # Wait for X server to start
 echo 'Waiting for X Socket' && until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done && echo 'X Server is ready'
 
+# Determine which desktop environment to use based on WM_ONLY
+# false = startplasma-x11 - Full KDE desktop environment (defaut)
+# true  = kwin_x11 - Window Manager only, without any desktop environment, just to provide resize capability to applications.
+export DESKTOP_ENV_COMMAND=$([[ "${WM_ONLY}" == "true" ]] && echo "kwin_x11" || echo "startplasma-x11")
+
 # Start KDE desktop environment
 export XDG_SESSION_ID="${DISPLAY#*:}"
 export QT_LOGGING_RULES="${QT_LOGGING_RULES:-*.debug=false;qt.qpa.*=false}"
-/usr/bin/dbus-launch --exit-with-session /usr/bin/startplasma-x11 &
+/usr/bin/dbus-launch --exit-with-session /usr/bin/${DESKTOP_ENV_COMMAND} &
 
 # Start Fcitx input method framework
 /usr/bin/fcitx &
