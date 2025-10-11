@@ -47,7 +47,7 @@ fi
 
 # Extract NVRTC dependency, https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvrtc/LICENSE.txt
 if command -v nvidia-smi &> /dev/null && nvidia-smi >/dev/null 2>&1; then
-  NVRTC_DEST_PREFIX="${NVRTC_DEST_PREFIX-/usr}"
+  NVRTC_DEST_PREFIX="${NVRTC_DEST_PREFIX-/opt/gstreamer}"
   CUDA_DRIVER_SYSTEM="$(nvidia-smi --version | grep 'CUDA Version' | cut -d: -f2 | tr -d ' ')"
   NVRTC_ARCH="${NVRTC_ARCH-$(dpkg --print-architecture | sed -e 's/arm64/sbsa/' -e 's/ppc64el/ppc64le/' -e 's/i.*86/x86/' -e 's/amd64/x86_64/' -e 's/unknown/x86_64/')}"
   # TEMPORARY: Cap CUDA version to 12.9 if the detected version is 13.0 or higher for NVRTC compatibility, https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/4655
