@@ -107,7 +107,7 @@ spec:
 #          value: "false"
         # Internal TURN server settings, do not uncomment other TURN server settings below this when using an internal TURN server
 #        - name: TURN_MIN_PORT
-#          value: "65534"
+#          value: "65532"
 #        - name: TURN_MAX_PORT
 #          value: "65535"
         # Provide only `SELKIES_TURN_SHARED_SECRET` for time-limited shared secret authentication or both `SELKIES_TURN_USERNAME` and `SELKIES_TURN_PASSWORD` for legacy long-term authentication, but do not provide both authentication methods at the same time
@@ -137,11 +137,19 @@ spec:
         # Internal TURN server settings
 #        - containerPort: 3478
 #          protocol: TCP
+#        - containerPort: 65532
+#          protocol: TCP
+#        - containerPort: 65533
+#          protocol: TCP
 #        - containerPort: 65534
 #          protocol: TCP
 #        - containerPort: 65535
 #          protocol: TCP
 #        - containerPort: 3478
+#          protocol: UDP
+#        - containerPort: 65532
+#          protocol: UDP
+#        - containerPort: 65533
 #          protocol: UDP
 #        - containerPort: 65534
 #          protocol: UDP

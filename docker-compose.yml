@@ -4,13 +4,14 @@ services:
     hostname: xgl
     # Change tag `latest` to Ubuntu versions such as `24.04`, use a persistent tag such as `24.04-20210101010101` to persist a certain container version
     image: ghcr.io/selkies-project/nvidia-glx-desktop:latest
+    runtime: nvidia
     ports:
     - '8080:8080'
     # Internal TURN server settings
 #    - '3478:3478'
-#    - '65534-65535:65534-65535'
+#    - '65532-65535:65532-65535'
 #    - '3478:3478/udp'
-#    - '65534-65535:65534-65535/udp'
+#    - '65532-65535:65532-65535/udp'
     stdin_open: true
     tty: true
     deploy:
@@ -76,7 +77,7 @@ services:
     # You need a valid hostname and a certificate from authorities such as ZeroSSL or Let's Encrypt with your TURN server to enable TURN over TLS
 #    - SELKIES_TURN_TLS=false
     # Internal TURN server settings, do not uncomment other TURN server settings below this when using an internal TURN server
-#    - TURN_MIN_PORT=65534
+#    - TURN_MIN_PORT=65532
 #    - TURN_MAX_PORT=65535
     # Provide only `SELKIES_TURN_SHARED_SECRET` for time-limited shared secret authentication or both `SELKIES_TURN_USERNAME` and `SELKIES_TURN_PASSWORD` for legacy long-term authentication, but do not provide both authentication methods at the same time
 #    - SELKIES_TURN_SHARED_SECRET=n0TaRealCoTURNAuthSecretThatIsSixtyFourLengthsLongPlaceholdPlace
