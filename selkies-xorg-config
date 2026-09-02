@@ -130,8 +130,25 @@ stage_nvidia_modules() {
   rm -rf "${extracted}"
 }
 
-# The GPU: a DRM node names one outright, the NVIDIA driver tree names one
-# when the runtime exposed no node
+# The first KMS card node the container was given, for a GPU that came in as
+# /dev/dri/cardN alone: a card has a display engine where a render node has
+# none, and a display-only device has no render node at all.
+first_card_pci() {
+  local card address
+  for card in /sys/class/drm/card[0-9]*; do
+    [ -e "/dev/dri/$(basename "${card}")" ] || continue
+    address="$(basename "$(readlink -f "${card}/device")")"
+    [ -d "/sys/bus/pci/devices/${address}" ] || continue
+    case "$(driver_of_pci "${address}")" in nvidia*) continue ;; esac
+    printf '%s' "${address}"
+    return 0
+  done
+  return 1
+}
+
+# The GPU: a DRM render node names one outright, the NVIDIA driver tree names
+# one when the runtime exposed no node, and a KMS card node given on its own
+# names the last kind
 node="${SELKIES_RENDER_DRI:-${SELKIES_GPU_RENDER_NODE:-}}"
 pci=""
 driver=""
@@ -143,6 +160,10 @@ if [ -n "${pci}" ]; then
 elif [ "${SELKIES_GPU_DRIVER:-}" = "nvidia" ] || [ -e /dev/nvidiactl ]; then
   pci="$(first_nvidia_pci)" || pci=""
   [ -n "${pci}" ] && driver="nvidia"
+fi
+if [ -z "${pci}" ]; then
+  pci="$(first_card_pci)" || pci=""
+  [ -n "${pci}" ] && { driver="$(driver_of_pci "${pci}")" || driver=""; }
 fi
 if [ -z "${pci}" ] || [ -z "${driver}" ]; then
   log "no GPU to run an X server on: pass one with --gpus (NVIDIA) or --device /dev/dri, or use the EGL image"
