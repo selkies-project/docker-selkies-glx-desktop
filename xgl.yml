@@ -17,100 +17,100 @@ spec:
         app: xgl
     spec:
       hostname: xgl
-      # Uncomment the below line to disable network isolation for WebRTC connectivity, display `:20` and `:21` should not be used in the host, may show an error if disallowed by the cluster
+      # Uncomment to disable network isolation, which the WebRTC transport needs
+      # without a TURN server; display `:20` must then be free on the node, and
+      # the cluster may disallow this
 #      hostNetwork: true
       containers:
       - name: xgl
-        # Change tag `latest` to Ubuntu versions such as `24.04`, use a persistent tag such as `24.04-20210101010101` to persist a certain container version
-        image: ghcr.io/selkies-project/nvidia-glx-desktop:latest
+        # Tags: `26.04` (Ubuntu 26.04, the current build), a persistent build
+        # such as `26.04-20260101010101`, and `latest`
+        image: ghcr.io/selkies-project/selkies-xgl-desktop:26.04
         env:
         - name: TZ
           value: "UTC"
-        - name: DISPLAY_SIZEW
-          value: "1920"
-        - name: DISPLAY_SIZEH
-          value: "1080"
-        - name: DISPLAY_REFRESH
-          value: "60"
-        - name: DISPLAY_DPI
-          value: "96"
-        - name: DISPLAY_CDEPTH
-          value: "24"
-        # With driver versions lower than 550, change to `DP-0` or any other `DP-*` port for larger resolution support if NOT using datacenter GPUs
-        - name: VIDEO_PORT
-          value: "DFP"
-        # Choose either `value:` or `secretKeyRef:` but not both at the same time
+        # Password of the container Linux user, and the web login when
+        # SELKIES_BASIC_AUTH_PASSWORD is not set; choose either `value:` or
+        # `secretKeyRef:` but not both
         - name: PASSWD
           value: "mypasswd"
 #          valueFrom:
 #            secretKeyRef:
 #              name: my-pass
 #              key: my-pass
-        # Uncomment to enable KasmVNC instead of Selkies, `SELKIES_BASIC_AUTH_PASSWORD` is used for authentication with KasmVNC, defaulting to `PASSWD` if not provided
-        # Uses: `SELKIES_ENABLE_BASIC_AUTH`, `SELKIES_BASIC_AUTH_USER`, `SELKIES_BASIC_AUTH_PASSWORD`, `SELKIES_ENABLE_RESIZE`, `SELKIES_ENABLE_HTTPS`, `SELKIES_HTTPS_CERT`, `SELKIES_HTTPS_KEY`
-#        - name: KASMVNC_ENABLE
-#          value: "true"
-        # Number of threads for encoding frames with KasmVNC, default value is all threads
-#        - name: KASMVNC_THREADS
-#          value: "0"
         ###
-        # Selkies parameters, for additional configurations see `selkies-gstreamer --help`
+        # Selkies settings, `selkies --help` and
+        # https://github.com/selkies-project/selkies/blob/main/docs/settings.md
+        # for the rest
         ###
-        # Change `SELKIES_ENCODER` to `x264enc`, `vp8enc`, or `vp9enc` if your GPU does not support `H.264 (AVCHD)` under the `NVENC - Encoding` section in https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new
-        - name: SELKIES_ENCODER
-          value: "nvh264enc"
-        # Do NOT set to `true` if physical monitor is connected to video port
-        - name: SELKIES_ENABLE_RESIZE
-          value: "false"
-        # Initial video bitrate in kilobits per second, may be changed later within web interface
+        # Transport: the WebSocket default needs nothing but the web port;
+        # `webrtc` needs the TURN or host-networking arrangements below
+#        - name: SELKIES_MODE
+#          value: "webrtc"
+        # The X server's initial mode, replaced by the client's size once it
+        # connects (dynamic resizing is on by default)
+        - name: DISPLAY_SIZEW
+          value: "1920"
+        - name: DISPLAY_SIZEH
+          value: "1080"
+        - name: DISPLAY_REFRESH
+          value: "60"
+        # NVIDIA GPUs: the video port the driver reports a monitor on (`DFP`, a
+        # `DP-*` port, or `none` for a server without RandR outputs); a monitor
+        # plugged into that port shows the desktop
+        - name: VIDEO_PORT
+          value: "DFP"
+        # Video encoder: `h264enc` (default, hardware NVENC/VA-API when the GPU
+        # has it, x264 otherwise), `h264enc-striped`, or `jpeg`
+#        - name: SELKIES_ENCODER
+#          value: "h264enc"
+        # Initial video bitrate in kilobits per second and frames per second,
+        # both adjustable from the web interface
         - name: SELKIES_VIDEO_BITRATE
           value: "8000"
-        # Initial frames per second, may be changed later within web interface
         - name: SELKIES_FRAMERATE
           value: "60"
-        # Initial audio bitrate in bits per second, may be changed later within web interface
         - name: SELKIES_AUDIO_BITRATE
           value: "128000"
-        # Uncomment if network conditions rapidly fluctuate
-#        - name: SELKIES_CONGESTION_CONTROL
-#          value: "true"
-        # Enable Basic Authentication from the web interface
+        # The web login, on by default: `ubuntu` and PASSWD unless set here
         - name: SELKIES_ENABLE_BASIC_AUTH
           value: "true"
-        # Defaults to `PASSWD` if unspecified, choose either `value:` or `secretKeyRef:` but not both at the same time
+#        - name: SELKIES_BASIC_AUTH_USER
+#          value: "ubuntu"
 #        - name: SELKIES_BASIC_AUTH_PASSWORD
 #          value: "mypasswd"
 #          valueFrom:
 #            secretKeyRef:
 #              name: my-pass
 #              key: my-pass
-        # Enable HTTPS web interface from inside the container
+        # TLS is served by default on a certificate minted per install; name a
+        # real one, or set false for a deployment that terminates TLS in front
         - name: SELKIES_ENABLE_HTTPS
-          value: "false"
-        # Volume mount trusted HTTPS certificate to new path for no web browser warnings
+          value: "true"
 #        - name: SELKIES_HTTPS_CERT
 #          value: /etc/ssl/certs/ssl-cert-snakeoil.pem
 #        - name: SELKIES_HTTPS_KEY
 #          value: /etc/ssl/private/ssl-cert-snakeoil.key
         ###
-        # Uncomment below to use a TURN server for improved network compatibility
+        # WebRTC transport: an external TURN server, or the container's own
         ###
 #        - name: SELKIES_TURN_HOST
 #          value: "turn.example.com"
 #        - name: SELKIES_TURN_PORT
 #          value: "3478"
-        # Change to `tcp` if the UDP protocol is throttled or blocked in your client network, or when the TURN server does not support UDP
+        # `tcp` when UDP is throttled or blocked in the client network
 #        - name: SELKIES_TURN_PROTOCOL
 #          value: "udp"
-        # You need a valid hostname and a certificate from authorities such as ZeroSSL or Let's Encrypt with your TURN server to enable TURN over TLS
+        # TURN over TLS needs a valid hostname and certificate on the TURN server
 #        - name: SELKIES_TURN_TLS
 #          value: "false"
-        # Internal TURN server settings, do not uncomment other TURN server settings below this when using an internal TURN server
+        # Internal TURN server: its port range, with the ports below opened;
+        # leave the external TURN settings unset
 #        - name: TURN_MIN_PORT
 #          value: "65532"
 #        - name: TURN_MAX_PORT
 #          value: "65535"
-        # Provide only `SELKIES_TURN_SHARED_SECRET` for time-limited shared secret authentication or both `SELKIES_TURN_USERNAME` and `SELKIES_TURN_PASSWORD` for legacy long-term authentication, but do not provide both authentication methods at the same time
+        # One of the shared secret, or the username and password pair
 #        - name: SELKIES_TURN_SHARED_SECRET
 #          valueFrom:
 #            secretKeyRef:
@@ -118,14 +118,13 @@ spec:
 #              key: turn-shared-secret
 #        - name: SELKIES_TURN_USERNAME
 #          value: "username"
-        # Choose either `value:` or `secretKeyRef:` but not both at the same time
 #        - name: SELKIES_TURN_PASSWORD
 #          value: "mypasswd"
 #          valueFrom:
 #            secretKeyRef:
 #              name: turn-password
 #              key: turn-password
-        # TURN REST URI authentication, all TURN server settings above are ignored if enabled
+        # TURN REST API credentials, which replace every other TURN setting
 #        - name: SELKIES_TURN_REST_URI
 #          value: "http://localhost:8008"
         stdin: true
@@ -134,7 +133,7 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
-        # Internal TURN server settings
+        # Internal TURN server ports
 #        - containerPort: 3478
 #          protocol: TCP
 #        - containerPort: 65532
@@ -159,11 +158,14 @@ spec:
           limits:
             memory: 64Gi
             cpu: "16"
+            # NVIDIA GPUs through the NVIDIA device plugin; AMD and Intel GPUs
+            # through their own plugins (`amd.com/gpu`, `gpu.intel.com/i915`)
             nvidia.com/gpu: 1
           requests:
             memory: 100Mi
             cpu: 100m
         volumeMounts:
+        # The browsers inside the desktop crash on the default shared memory
         - mountPath: /dev/shm
           name: dshm
         - mountPath: /cache

@@ -1,0 +1,276 @@
+#!/bin/bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Configure the X.Org server for the GPU the session renders on: writes
+# /etc/X11/xorg.conf for that GPU alone and, where it is NVIDIA's, stages the
+# X server modules the container runtime does not inject. Prints the driver
+# the configuration names (`nvidia` or `modesetting`) on stdout and exits
+# non-zero, with the reason on stderr, when no GPU can carry an X server.
+#
+# The GPU is the one the base container resolved for the session
+# (selkies-gpu-probe: --render-dri, else the --auto-gpu pick), read back from
+# the render node it reported; an NVIDIA GPU exposed without a DRM node is
+# found through the driver's own /proc tree. Every vendor with a KMS driver
+# takes the modesetting driver, which is how AMD and Intel GPUs run X.Org
+# today; the proprietary NVIDIA stack has its own.
+set -e
+
+# Environment computed by the base container's entrypoint, so this can also be
+# run by hand from a shell attached to the container.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
+# shellcheck disable=SC1091  # written by container-entrypoint.sh at startup
+[ -f "${XDG_RUNTIME_DIR}/container-env" ] && . "${XDG_RUNTIME_DIR}/container-env"
+
+DISPLAY_SIZEW="${DISPLAY_SIZEW:-1920}"
+DISPLAY_SIZEH="${DISPLAY_SIZEH:-1080}"
+DISPLAY_REFRESH="${DISPLAY_REFRESH:-60}"
+DISPLAY_CDEPTH="${DISPLAY_CDEPTH:-24}"
+XORG_CONF="/etc/X11/xorg.conf"
+XORG_MODULES="/usr/lib/xorg/modules"
+
+log() { echo "[xorg] $*" >&2; }
+
+# PCI address (domain:bus:device.function) of the device behind a DRM node.
+pci_of_node() {
+  local device
+  device="$(readlink -f "/sys/class/drm/$(basename "$1")/device" 2>/dev/null)" || return 1
+  [ -n "${device}" ] && basename "${device}"
+}
+
+# The kernel driver bound to a PCI address.
+driver_of_pci() {
+  local link
+  link="$(readlink "/sys/bus/pci/devices/$1/driver" 2>/dev/null)" || return 1
+  basename "${link}"
+}
+
+# The X.Org BusID for a PCI address: decimal, with the domain named only when
+# it is not zero, which is the form the server parses.
+xorg_busid() {
+  local domain bus device function rest
+  domain="${1%%:*}"; rest="${1#*:}"
+  bus="${rest%%:*}"; rest="${rest#*:}"
+  device="${rest%%.*}"; function="${rest#*.}"
+  if [ "$((16#${domain}))" -ne 0 ]; then
+    printf 'PCI:%d@%d:%d:%d' "$((16#${bus}))" "$((16#${domain}))" "$((16#${device}))" "$((16#${function}))"
+  else
+    printf 'PCI:%d:%d:%d' "$((16#${bus}))" "$((16#${device}))" "$((16#${function}))"
+  fi
+}
+
+# The NVIDIA GPU the X server takes when no DRM node named one: the first the
+# runtime exposed, in the order the driver's tools list them.
+first_nvidia_pci() {
+  local address
+  if command -v nvidia-smi > /dev/null 2>&1; then
+    address="$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader 2>/dev/null | head -n 1 | tr -d ' ')"
+    # nvidia-smi prints a four-byte domain; sysfs and X.Org use a two-byte one
+    address="${address#0000}"
+    address="$(printf '%s' "${address}" | tr '[:upper:]' '[:lower:]')"
+    [ -d "/sys/bus/pci/devices/${address}" ] && { printf '%s' "${address}"; return 0; }
+  fi
+  for gpu in /proc/driver/nvidia/gpus/*/; do
+    [ -d "${gpu}" ] || continue
+    address="$(basename "${gpu}")"
+    [ -d "/sys/bus/pci/devices/${address}" ] && { printf '%s' "${address}"; return 0; }
+  done
+  return 1
+}
+
+# Make sure nvidia_drv.so and the NVIDIA GLX server module of the host driver's
+# exact version are in place. A container runtime that injects the driver's
+# X server modules along with its libraries (the NVIDIA Container Toolkit
+# does, under the graphics capability) leaves nothing to do; where it injects
+# only the libraries, the modules are lifted out of the driver's own
+# installer, the only place they are shipped, fetched once per driver
+# version. A container that keeps its filesystem keeps them across restarts.
+stage_nvidia_modules() {
+  local version arch archive extracted
+  version="${NVIDIA_DRIVER_VERSION:-}"
+  if [ -z "${version}" ] && [ -f /proc/driver/nvidia/version ]; then
+    version="$(head -n 1 /proc/driver/nvidia/version | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9.]+$/) {print $i; exit}}')"
+  fi
+  if [ -z "${version}" ] && command -v nvidia-smi > /dev/null 2>&1; then
+    version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n 1 | tr -d ' ')"
+  fi
+  if [ -z "${version}" ]; then
+    log "the NVIDIA driver version cannot be read; set NVIDIA_DRIVER_VERSION"
+    return 1
+  fi
+  if [ -f "${XORG_MODULES}/drivers/nvidia_drv.so" ] && [ -f "${XORG_MODULES}/extensions/libglxserver_nvidia.so.${version}" ]; then
+    [ -e "${XORG_MODULES}/extensions/libglxserver_nvidia.so" ] \
+      || ln -snf "libglxserver_nvidia.so.${version}" "${XORG_MODULES}/extensions/libglxserver_nvidia.so"
+    return 0
+  fi
+  arch="$(uname -m)"
+  archive="NVIDIA-Linux-${arch}-${version}.run"
+  extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-modules.XXXXXX")"
+  log "staging the X server modules of NVIDIA driver ${version}"
+  # Consumer and datacenter drivers are published under different paths; a
+  # version exists under exactly one of them
+  if ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
+         "https://international.download.nvidia.com/XFree86/Linux-${arch}/${version}/${archive}" \
+     && ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
+         "https://international.download.nvidia.com/tesla/${version}/${archive}"; then
+    log "NVIDIA driver ${version} cannot be downloaded; set NVIDIA_DRIVER_VERSION to a published one"
+    rm -rf "${extracted}"
+    return 1
+  fi
+  sh "${extracted}/${archive}" --extract-only --target "${extracted}/driver" > /dev/null
+  mkdir -p "${XORG_MODULES}/drivers" "${XORG_MODULES}/extensions"
+  # A module of another version left from an earlier driver is replaced; one
+  # the runtime mounted read-only is what it is
+  for module in "drivers/nvidia_drv.so" "extensions/libglxserver_nvidia.so.${version}"; do
+    [ -f "${XORG_MODULES}/${module}" ] && [ ! -w "${XORG_MODULES}/${module}" ] && continue
+    install -m 644 "${extracted}/driver/$(basename "${module}")" "${XORG_MODULES}/${module}"
+  done
+  ln -snf "libglxserver_nvidia.so.${version}" "${XORG_MODULES}/extensions/libglxserver_nvidia.so"
+  rm -rf "${extracted}"
+}
+
+# The GPU: a DRM node names one outright, the NVIDIA driver tree names one
+# when the runtime exposed no node
+node="${SELKIES_RENDER_DRI:-${SELKIES_GPU_RENDER_NODE:-}}"
+pci=""
+driver=""
+if [ -n "${node}" ] && [ -e "${node}" ]; then
+  pci="$(pci_of_node "${node}")" || pci=""
+fi
+if [ -n "${pci}" ]; then
+  driver="$(driver_of_pci "${pci}")" || driver=""
+elif [ "${SELKIES_GPU_DRIVER:-}" = "nvidia" ] || [ -e /dev/nvidiactl ]; then
+  pci="$(first_nvidia_pci)" || pci=""
+  [ -n "${pci}" ] && driver="nvidia"
+fi
+if [ -z "${pci}" ] || [ -z "${driver}" ]; then
+  log "no GPU to run an X server on: pass one with --gpus (NVIDIA) or --device /dev/dri, or use the EGL image"
+  exit 1
+fi
+busid="$(xorg_busid "${pci}")"
+
+# A modeline for the configured size: no monitor answers with one here
+modeline="$(cvt -r "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" | sed -n '2p')"
+mode="$(printf '%s' "${modeline}" | awk '{print $2}' | tr -d '"')"
+
+case "${driver}" in
+  nvidia|nvidia-drm)
+    stage_nvidia_modules
+    # A video port the driver reports connected keeps RandR outputs to hang
+    # modes on and lets a monitor plugged there show the desktop; none at all
+    # (VIDEO_PORT=none) leaves the server without RandR outputs
+    video_port="${VIDEO_PORT:-DFP}"
+    if [ "$(printf '%s' "${video_port}" | tr '[:upper:]' '[:lower:]')" = "none" ]; then
+      port_option='Option         "UseDisplayDevice" "None"'
+    else
+      port_option="Option         \"ConnectedMonitor\" \"${video_port}\""
+    fi
+    cat > "${XORG_CONF}" <<EOF
+# Written by selkies-xorg-config for the GPU at ${pci}; edits are lost at the
+# next start.
+Section "ServerLayout"
+    Identifier     "Layout0"
+    Screen      0  "Screen0" 0 0
+EndSection
+
+Section "ServerFlags"
+    Option         "DontVTSwitch" "True"
+    Option         "DontZap" "True"
+    Option         "AllowMouseOpenFail" "True"
+    Option         "AutoAddDevices" "False"
+    Option         "AutoAddGPU" "False"
+    Option         "BlankTime" "0"
+    Option         "StandbyTime" "0"
+    Option         "SuspendTime" "0"
+    Option         "OffTime" "0"
+EndSection
+
+Section "Monitor"
+    Identifier     "Monitor0"
+    ${modeline}
+    Option         "DPMS" "False"
+EndSection
+
+Section "Device"
+    Identifier     "Device0"
+    Driver         "nvidia"
+    BusID          "${busid}"
+    ${port_option}
+    Option         "AllowEmptyInitialConfiguration" "True"
+    Option         "AllowExternalGpus" "True"
+    Option         "ProbeAllGpus" "False"
+    Option         "ModeValidation" "NoMaxPClkCheck,NoEdidMaxPClkCheck,NoMaxSizeCheck,NoHorizSyncCheck,NoVertRefreshCheck,NoVirtualSizeCheck,NoExtendedGpuCapabilitiesCheck,NoTotalSizeCheck,NoDualLinkDVICheck,NoDisplayPortBandwidthCheck,AllowNon3DVisionModes,AllowNonHDMI3DModes,AllowNonEdidModes,NoEdidHDMI2Check,AllowDpInterlaced"
+    Option         "IncludeImplicitMetaModes" "True"
+    Option         "ModeDebug" "True"
+EndSection
+
+Section "Screen"
+    Identifier     "Screen0"
+    Device         "Device0"
+    Monitor        "Monitor0"
+    DefaultDepth    ${DISPLAY_CDEPTH}
+    SubSection     "Display"
+        Depth       ${DISPLAY_CDEPTH}
+        Modes      "${mode}"
+        Virtual     ${DISPLAY_SIZEW} ${DISPLAY_SIZEH}
+    EndSubSection
+EndSection
+EOF
+    log "NVIDIA GPU at ${pci} (${busid}), video port ${video_port}, ${mode}"
+    echo "nvidia"
+    ;;
+  *)
+    card="$(ls -d /sys/bus/pci/devices/${pci}/drm/card* 2>/dev/null | head -n 1)"
+    if [ -z "${card}" ] || [ ! -e "/dev/dri/$(basename "${card}")" ]; then
+      log "the ${driver} GPU at ${pci} has no /dev/dri/card node here; pass --device /dev/dri"
+      exit 1
+    fi
+    cat > "${XORG_CONF}" <<EOF
+# Written by selkies-xorg-config for the GPU at ${pci}; edits are lost at the
+# next start.
+Section "ServerLayout"
+    Identifier     "Layout0"
+    Screen      0  "Screen0" 0 0
+EndSection
+
+Section "ServerFlags"
+    Option         "DontVTSwitch" "True"
+    Option         "DontZap" "True"
+    Option         "AllowMouseOpenFail" "True"
+    Option         "AutoAddDevices" "False"
+    Option         "AutoAddGPU" "False"
+    Option         "BlankTime" "0"
+    Option         "StandbyTime" "0"
+    Option         "SuspendTime" "0"
+    Option         "OffTime" "0"
+EndSection
+
+Section "Monitor"
+    Identifier     "Monitor0"
+    ${modeline}
+    Option         "DPMS" "False"
+EndSection
+
+Section "Device"
+    Identifier     "Device0"
+    Driver         "modesetting"
+    BusID          "${busid}"
+    Option         "kmsdev" "/dev/dri/$(basename "${card}")"
+EndSection
+
+Section "Screen"
+    Identifier     "Screen0"
+    Device         "Device0"
+    Monitor        "Monitor0"
+    DefaultDepth    ${DISPLAY_CDEPTH}
+    SubSection     "Display"
+        Depth       ${DISPLAY_CDEPTH}
+        Modes      "${mode}"
+    EndSubSection
+EndSection
+EOF
+    log "${driver} GPU at ${pci} (${busid}) on /dev/dri/$(basename "${card}"), ${mode}"
+    echo "modesetting"
+    ;;
+esac

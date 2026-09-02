@@ -1,0 +1,14 @@
+#!/bin/bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# The session bus every part of Plasma meets on: kwin, the shell, kded and
+# everything D-Bus activation starts for them. A fixed socket path lets the
+# session services, a shell attached to the container and the launcher behind
+# the dashboards' apps panel all export the same address without sharing an
+# environment, which a dbus-launch per session would not give them.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
+mkdir -p "${XDG_RUNTIME_DIR}"
+chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+exec dbus-daemon --session --nofork --nosyslog --nopidfile --address="unix:path=${XDG_RUNTIME_DIR}/selkies-session-bus"

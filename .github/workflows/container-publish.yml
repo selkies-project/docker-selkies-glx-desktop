@@ -4,66 +4,172 @@
 
 name: Publish container
 
+# Multi-architecture (x86_64 + aarch64) image, published to ghcr.io the way the
+# Selkies base container is: each architecture builds on a native runner (no
+# QEMU) and pushes by digest, and a merge job assembles the multi-arch manifest
+# under the release tag, a persistent tag carrying the commit time, and
+# `latest`. A pull request builds both architectures and pushes nothing.
+
 on:
   workflow_dispatch:
+    inputs:
+      base_tag:
+        description: Tag of the Selkies base container to build on
+        type: string
+        default: main-ubuntu26.04
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: selkies-project/nvidia-glx-desktop
+  IMAGE_NAME: selkies-project/selkies-glx-desktop
+  BASE_IMAGE: ghcr.io/selkies-project/selkies/base
+  # The distribution inside the image, which the Selkies base tag names too
+  DISTRIB_RELEASE: "26.04"
+  # ghcr answers a secondary rate limit with 403 on the push itself, so a
+  # failed push is retried once after the minute GitHub asks for
+  PUSH_RETRY_DELAY: "60"
+
 jobs:
   build:
-    name: Build and push Ubuntu ${{ matrix.os_version }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    name: Build ${{ matrix.arch.name }}
+    runs-on: ${{ matrix.arch.runner }}
     strategy:
+      fail-fast: false
       matrix:
-        include:
-        - os_version: "20.04"
-        - os_version: "22.04"
-        - os_version: "24.04"
-          latest_tag: true
+        arch:
+          - name: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - name: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Free disk space
+        # The desktop layers outgrow the runner's free space
+        uses: endersonmenezes/free-disk-space@v4
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: false
+          remove_packages: azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* mysql* mongodb*
+          remove_packages_one_command: true
+          remove_folders: /usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle /usr/local/share/vcpkg
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: first
+        uses: docker/build-push-action@v7
+        continue-on-error: ${{ github.event_name != 'pull_request' }}
+        with:
+          context: .
+          platforms: ${{ matrix.arch.platform }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'main-ubuntu26.04' }}
+          outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ matrix.arch.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}
+      - name: Wait for the registry
+        if: ${{ steps.first.outcome == 'failure' }}
+        run: sleep "${PUSH_RETRY_DELAY}"
+      - name: Build and push by digest (second attempt)
+        id: retry
+        if: ${{ steps.first.outcome == 'failure' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.arch.platform }}
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'main-ubuntu26.04' }}
+          outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}
+      - name: Export the digest
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          DIGEST: ${{ steps.retry.outputs.digest || steps.first.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          name: digest-${{ matrix.arch.name }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
-    - name: Fetch commit time
-      run: echo "COMMIT_TIME_GIT=$(TZ=UTC git show -s --format='%cd' --date=format-local:'%Y%m%d%H%M%S')" >> "$GITHUB_ENV"
+  merge:
+    name: Merge the multi-arch manifest
+    needs: build
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch the commit time
+        run: echo "COMMIT_TIME_GIT=$(TZ=UTC git show -s --format='%cd' --date=format-local:'%Y%m%d%H%M%S')" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download the digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+      - name: Create and push the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          set -e
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+          # One empty file per pushed digest, named after it
+          SOURCES=()
+          for digest in *; do SOURCES+=("${IMAGE}@sha256:${digest}"); done
+          for attempt in 1 2 3; do
+            if docker buildx imagetools create \
+                 -t "${IMAGE}:${DISTRIB_RELEASE}" \
+                 -t "${IMAGE}:${DISTRIB_RELEASE}-${COMMIT_TIME_GIT}" \
+                 -t "${IMAGE}:latest" \
+                 "${SOURCES[@]}"; then
+              exit 0
+            fi
+            echo "manifest push failed (attempt ${attempt}); waiting for the registry"
+            sleep "${PUSH_RETRY_DELAY}"
+          done
+          exit 1
 
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log into registry ${{ env.REGISTRY }}
-      if: ${{ github.event_name != 'pull_request' }}
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract container metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
-    - name: Build and push Ubuntu ${{ matrix.os_version }} container image
-      uses: docker/build-push-action@v5
-      with:
-        build-args: |
-          DISTRIB_RELEASE=${{ matrix.os_version }}
-        context: .
-        labels: ${{ steps.meta.outputs.labels }}
-        no-cache: true
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.os_version }}
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.os_version }}-${{ env.COMMIT_TIME_GIT }}
-          ${{ matrix.latest_tag && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+  cleanup:
+    name: Prune untagged images
+    needs: merge
+    # Each push moves the tags onto new manifests, and the platform images and
+    # attestations they pointed at before stay in the registry untagged
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cleanup-images
+    # A prune that hits a rate limit must not fail the publish
+    continue-on-error: true
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: selkies-glx-desktop
+          delete-untagged: true
+          # A build in flight has its platform images untagged until its
+          # manifest lands, so the window stays well clear of a publish
+          older-than: 1 day

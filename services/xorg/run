@@ -1,0 +1,106 @@
+#!/bin/bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+export DISPLAY="${DISPLAY:-:20}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
+until [ -f "${XDG_RUNTIME_DIR}/container-env" ]; do sleep 0.5; done
+# shellcheck disable=SC1091  # written by container-entrypoint.sh at startup
+. "${XDG_RUNTIME_DIR}/container-env"
+
+# The X.Org server on the session's GPU, in place of the base container's
+# framebuffer server: the GPU renders and scans out the whole desktop, so
+# OpenGL and Vulkan reach applications through the vendor's own X driver with
+# no translation in between. One GPU carries one X server.
+if [ "${SELKIES_WAYLAND:-false}" = "true" ]; then
+  echo "[xorg] SELKIES_WAYLAND=true: this image runs no Wayland session; the X server stays parked"
+  exec sleep infinity
+fi
+
+# Zink belongs to the GL applications in the session, not to the display
+# server, which renders through its own driver; only this process drops it.
+unset GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE LIBGL_KOPPER_DRI2
+
+# The configuration for whichever GPU the session was given. Without one there
+# is nothing for this server to run on, and the framebuffer server of the EGL
+# image is the answer, so the service parks on the message rather than
+# respawning into the same refusal.
+if ! DRIVER="$(selkies-xorg-config)"; then
+  echo "[xorg] no X server configuration; the display server stays parked" >&2
+  exec sleep infinity
+fi
+
+# A server that died leaves its lock and socket behind, and the replacement then
+# starts against a display number that still looks taken.
+DISPLAY_NUM="${DISPLAY#:}"
+DISPLAY_NUM="${DISPLAY_NUM%%.*}"
+if [ -n "${DISPLAY_NUM}" ] && ! pgrep -f "Xorg ${DISPLAY}( |$)" > /dev/null 2>&1; then
+  rm -f "/tmp/.X${DISPLAY_NUM}-lock" "/tmp/.X11-unix/X${DISPLAY_NUM}"
+fi
+
+# The server is told to share a virtual terminal it never switches to, and the
+# terminal it names has to exist: a pseudo-terminal stands in for it, which a
+# container is not given by default.
+if [ ! -e /dev/tty7 ]; then
+  ln -snf /dev/ptmx /dev/tty7 2>/dev/null || sudo-root ln -snf /dev/ptmx /dev/tty7 \
+    || echo "[xorg] could not create /dev/tty7; the server may refuse to start" >&2
+fi
+
+# Screen saver (-s 0) and DPMS (-dpms) are off at the server level so the
+# desktop can never blank: a black stream is never what a viewer wants, and
+# nothing in this image unblanks one. The binary is run directly: the
+# distribution's wrapper only decides whether to keep root privileges, and this
+# server has none to keep.
+/usr/lib/xorg/Xorg "${DISPLAY}" vt7 -noreset -novtswitch -sharevts -nolisten "tcp" -ac -s 0 -dpms \
+    +extension "COMPOSITE" +extension "DAMAGE" +extension "GLX" +extension "RANDR" +extension "RENDER" +extension "MIT-SHM" +extension "XFIXES" +extension "XTEST" \
+    -config /etc/X11/xorg.conf -logfile "${XDG_RUNTIME_DIR}/Xorg.log" &
+XORG_PID=$!
+trap 'kill "${XORG_PID}" 2>/dev/null' TERM INT
+
+# The socket appears before the server can answer, and a server that stalls
+# during startup keeps it open without ever accepting: clients then hang instead
+# of failing. Prove the server completes a handshake, and hand a stalled one
+# back to the supervisor rather than supervising a dead display.
+READY="false"
+for _ in $(seq 1 30); do
+  if ! kill -0 "${XORG_PID}" 2>/dev/null; then
+    break
+  fi
+  if timeout 2 xdpyinfo -display "${DISPLAY}" > /dev/null 2>&1; then
+    READY="true"
+    break
+  fi
+  sleep 1
+done
+if [ "${READY}" != "true" ]; then
+  echo "[xorg] ${DISPLAY} did not answer within 30s; restarting the server (see ${XDG_RUNTIME_DIR}/Xorg.log)" >&2
+  kill -9 "${XORG_PID}" 2>/dev/null
+  wait "${XORG_PID}" 2>/dev/null
+  exit 1
+fi
+
+# A KMS driver with nothing plugged in brings its outputs up disconnected and
+# lights none of them, so the desktop would have no screen: the configured mode
+# is attached to the first output that takes it, connected or not. The NVIDIA
+# driver's virtual video port carries its mode from the configuration.
+if [ "${DRIVER}" != "nvidia" ]; then
+  modeline="$(cvt -r "${DISPLAY_SIZEW:-1920}" "${DISPLAY_SIZEH:-1080}" "${DISPLAY_REFRESH:-60}" | sed -n '2p' | sed 's/^Modeline //')"
+  mode="$(printf '%s' "${modeline}" | awk '{print $1}' | tr -d '"')"
+  lit=""
+  for output in $(xrandr --display "${DISPLAY}" --query | awk '/ connected| disconnected/ {print $1}'); do
+    # shellcheck disable=SC2086  # the modeline is a list of numbers
+    xrandr --display "${DISPLAY}" --newmode ${modeline//\"/} > /dev/null 2>&1 || true
+    if xrandr --display "${DISPLAY}" --addmode "${output}" "${mode}" > /dev/null 2>&1 \
+       && xrandr --display "${DISPLAY}" --output "${output}" --primary --mode "${mode}" > /dev/null 2>&1; then
+      lit="${output}"
+      break
+    fi
+  done
+  if [ -n "${lit}" ]; then
+    echo "[xorg] ${mode} on output ${lit}"
+  else
+    echo "[xorg] no output took ${mode}; the desktop has no screen" >&2
+  fi
+fi
+echo "[xorg] ${DISPLAY} is serving clients on the ${DRIVER} driver"
+wait "${XORG_PID}"

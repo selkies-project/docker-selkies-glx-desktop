@@ -1,0 +1,43 @@
+#!/bin/bash
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+export DISPLAY="${DISPLAY:-:20}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
+until [ -f "${XDG_RUNTIME_DIR}/container-env" ]; do sleep 0.5; done
+# shellcheck disable=SC1091  # written by container-entrypoint.sh at startup
+. "${XDG_RUNTIME_DIR}/container-env"
+
+# The Plasma X11 session on the X.Org server the xorg service runs. This image
+# has no Wayland session, and a deployment that asked for the display server
+# alone gets it: either way the service parks rather than exiting into an s6
+# restart loop.
+if [ "${SELKIES_WAYLAND:-false}" = "true" ]; then
+  echo "[plasma] SELKIES_WAYLAND=true: this image runs no Wayland session"
+  exec sleep infinity
+fi
+start_plasma="${START_PLASMA%%|*}"
+start_plasma="${start_plasma,,}"
+start_plasma="${start_plasma// /}"
+if [ -n "${start_plasma}" ] && [ "${start_plasma}" != "true" ] && [ "${start_plasma}" != "1" ]; then
+  echo "[plasma] START_PLASMA=${START_PLASMA}: the display server runs without a session"
+  exec sleep infinity
+fi
+
+until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done
+
+# The bus the dbus-session service serves: a fixed address every part of
+# Plasma, a shell attached to the container and the launcher behind the
+# dashboards' apps panel reach without sharing an environment. startplasma
+# refuses to run without one.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/selkies-session-bus"
+until [ -S "${XDG_RUNTIME_DIR}/selkies-session-bus" ]; do sleep 0.5; done
+
+# startplasma-x11 sets the session's own identity (XDG_CURRENT_DESKTOP,
+# KDE_SESSION_VERSION, DESKTOP_SESSION) and runs plasma_session, which starts
+# kwin_x11 and the shell. The multi-monitor handover names kwin_x11 too
+# (SELKIES_MULTI_MONITOR_WM), so a second display re-lays the session out per
+# monitor rather than across the framebuffer.
+export XDG_SESSION_TYPE="x11"
+echo "[plasma] session draws on ${DISPLAY}"
+exec startplasma-x11
