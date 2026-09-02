@@ -175,7 +175,7 @@ EndSection
 <details markdown>
   <summary>Open Answer</summary>
 
-Give the container more shared memory: `--shm-size=2g`, or the `/dev/shm` memory-backed `emptyDir` `xgl.yml` mounts. Applications that bring their own sandbox (Chrome, Electron, AppImages) run inside the container's own sandboxing: Chrome is already started with its sandbox arrangements, Electron applications take `--no-sandbox`, and AppImages are extracted rather than FUSE-mounted (`APPIMAGE_EXTRACT_AND_RUN` is set). Do not use `systemd`, Flatpak or Snap inside the container; they need privileges a container should not have.
+Give the container more shared memory: `--shm-size=2g`, or the `/dev/shm` memory-backed `emptyDir` `xgl.yml` mounts. Applications that bring their own sandbox (Chrome, Electron, AppImages) cannot set it up inside a container, which grants neither the capabilities Chrome's setuid helper needs nor unprivileged user namespaces: the container is the isolation boundary instead. Chrome's launcher in this image therefore carries `--no-sandbox`, Electron applications need the same switch, and AppImages are extracted rather than FUSE-mounted (`APPIMAGE_EXTRACT_AND_RUN` is set). Do not use `systemd`, Flatpak or Snap inside the container; they need privileges a container should not have.
 
 </details>
 
