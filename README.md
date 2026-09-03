@@ -118,7 +118,7 @@ Everything Selkies reads is an environment variable named in [`docs/settings.md`
 | `SELKIES_SCALING_DPI` | `96` | The desktop's DPI, also adjustable from the web interface |
 | `SELKIES_AUTO_GPU`, `SELKIES_RENDER_DRI` | `true`, (empty) | Which GPU the X server and the session run on when the container was given several: the auto-selection pick, or a render node named outright |
 | `SELKIES_COMMAND_ENABLED` | `true` | The command channel behind the dashboard's apps panel; `false` disables it |
-| `START_PLASMA` | `true` | `false` runs only the X server |
+| `START_PLASMA` | `true` | `false` runs the X server with kwin alone, no Plasma shell: a single application started from the apps panel or an attached shell is managed, resized and maximized without a desktop around it |
 
 The `SELKIES_TURN_*` variables configure the WebRTC transport, and `DISABLE_ZINK` is preset here: OpenGL goes through the X server's own GLX vendor, the NVIDIA driver included, rather than through Zink.
 

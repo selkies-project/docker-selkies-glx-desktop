@@ -251,7 +251,7 @@ USER 1000
 # terminal, so the desktop image enables the channel; disable with
 # -e SELKIES_COMMAND_ENABLED=false.
 ENV SELKIES_COMMAND_ENABLED="true"
-# Start the Plasma session (set to false to run only the X server)
+# Start the Plasma session; false runs the X server with kwin alone, no shell
 ENV START_PLASMA="true"
 # Plasma's menu definitions carry its prefix; the base defaults to lxqt-
 ENV XDG_MENU_PREFIX="plasma-"

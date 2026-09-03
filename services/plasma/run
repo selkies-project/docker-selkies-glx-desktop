@@ -8,10 +8,9 @@ until [ -f "${XDG_RUNTIME_DIR}/container-env" ]; do sleep 0.5; done
 # shellcheck disable=SC1091  # written by container-entrypoint.sh at startup
 . "${XDG_RUNTIME_DIR}/container-env"
 
-# The Plasma X11 session on the X.Org server the xorg service runs. This image
-# has no Wayland session, and a deployment that asked for the display server
-# alone gets it: either way the service parks rather than exiting into an s6
-# restart loop.
+# The Plasma X11 session, or kwin alone, on the X.Org server the xorg service
+# runs. This image has no Wayland session, so the service parks rather than
+# exiting into an s6 restart loop when one is asked for.
 if [ "${SELKIES_WAYLAND:-false}" = "true" ]; then
   echo "[plasma] SELKIES_WAYLAND=true: this image runs no Wayland session"
   exec sleep infinity
@@ -19,10 +18,6 @@ fi
 start_plasma="${START_PLASMA%%|*}"
 start_plasma="${start_plasma,,}"
 start_plasma="${start_plasma// /}"
-if [ -n "${start_plasma}" ] && [ "${start_plasma}" != "true" ] && [ "${start_plasma}" != "1" ]; then
-  echo "[plasma] START_PLASMA=${START_PLASMA}: the display server runs without a session"
-  exec sleep infinity
-fi
 
 until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done
 
@@ -33,11 +28,20 @@ until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done
 export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/selkies-session-bus"
 until [ -S "${XDG_RUNTIME_DIR}/selkies-session-bus" ]; do sleep 0.5; done
 
+# Only the window manager: windows are managed, resized and maximized for a
+# single application streamed without a desktop, the same as the Wayland
+# backend's kwin-only mode. kwin_x11 reads the session type it is started
+# under and the image's kwinrc, and registers on the session bus above.
+export XDG_SESSION_TYPE="x11"
+if [ -n "${start_plasma}" ] && [ "${start_plasma}" != "true" ] && [ "${start_plasma}" != "1" ]; then
+  echo "[plasma] START_PLASMA=${START_PLASMA}: running kwin_x11 without the Plasma shell on ${DISPLAY}"
+  exec kwin_x11
+fi
+
 # startplasma-x11 sets the session's own identity (XDG_CURRENT_DESKTOP,
 # KDE_SESSION_VERSION, DESKTOP_SESSION) and runs plasma_session, which starts
-# kwin_x11 and the shell. The multi-monitor handover names kwin_x11 too
-# (SELKIES_MULTI_MONITOR_WM), so a second display re-lays the session out per
-# monitor rather than across the framebuffer.
-export XDG_SESSION_TYPE="x11"
+# kwin_x11 and the shell; kwin_x11 takes its screens from the RandR monitors
+# Selkies publishes (patches/kwin-x11/), so a second display is a screen of
+# its own.
 echo "[plasma] session draws on ${DISPLAY}"
 exec startplasma-x11
