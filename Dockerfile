@@ -25,8 +25,34 @@
 # point of this image is the X server on the GPU.
 
 ARG BASE_IMAGE="ghcr.io/selkies-project/selkies/base:main-ubuntu26.04"
+ARG DISTRIB_IMAGE="ubuntu"
+ARG DISTRIB_RELEASE="26.04"
 # The Selkies revision the shared helper scripts are taken from
 ARG SELKIES_REF="main"
+
+# The X11 window manager, rebuilt from the archive with a patch: stock kwin_x11
+# makes one screen per CRTC and spans the displays Selkies publishes as RandR
+# monitors over the one CRTC a framebuffer server has, so a maximized window
+# would cover both.
+FROM ${DISTRIB_IMAGE}:${DISTRIB_RELEASE} AS kwinx11build
+ARG DEBIAN_FRONTEND="noninteractive"
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries::Delay::Maximum "30";\n' \
+        > /etc/apt/apt.conf.d/99-selkies-retries
+COPY patches/kwin-x11/ /build/patches/
+RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get clean && apt-get update && \
+    apt-get install --no-install-recommends -y \
+        ca-certificates \
+        dpkg-dev && \
+    apt-get build-dep -y kwin-x11 && \
+    mkdir -p /build/src && cd /build/src && \
+    apt-get source kwin-x11 && \
+    cd kwin-x11-*/ && \
+    for kwin_patch in /build/patches/*.patch; do patch -p1 < "${kwin_patch}"; done && \
+    DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" \
+        dpkg-buildpackage -b -uc -us && \
+    mkdir -p /build/debs && \
+    mv /build/src/*.deb /build/debs/
 
 FROM ${BASE_IMAGE}
 
@@ -62,12 +88,17 @@ RUN if ! command -v selkies-privileged-files > /dev/null; then \
 USER 1000
 SHELL ["/usr/bin/fakeroot", "--", "/bin/sh", "-c"]
 
+COPY --from=kwinx11build --chown=1000:1000 /build/debs /tmp/kwin-x11-debs
+
 # The Plasma X11 session and the X.Org server it draws on. The server itself is
 # in the base (xserver-xorg-core, with the modesetting driver built in); what
 # X.Org needs beyond it to drive a GPU is the input and video driver metapackages
 # its session package pulls, and the modesetting driver needs no vendor
 # package. The NVIDIA X driver is not a package on any base: it is staged at
 # runtime from the driver installer matching the host (selkies-xorg-config).
+# The patched kwin-x11 then replaces the packaged one: the dpkg -i takes only
+# the rebuilt debs whose package the install put on the system, in one
+# invocation so dpkg orders them itself.
 RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
         plasma-desktop \
         plasma-workspace \
@@ -106,6 +137,13 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
         # calling gtk-update-icon-cache; without it that refresh is a silent
         # no-op and the cache a session reads predates the application
         gtk-update-icon-cache && \
+    debs="" && \
+    for deb in /tmp/kwin-x11-debs/*.deb; do \
+        if dpkg -s "$(dpkg-deb -f "${deb}" Package)" > /dev/null 2>&1; then \
+            debs="${debs} ${deb}"; \
+        fi; \
+    done && \
+    dpkg -i ${debs} && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # Session defaults in the system scope, so a user's own settings still win:

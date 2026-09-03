@@ -1,0 +1,281 @@
+kwin_x11: build screens from RandR monitors, and follow their changes
+
+kwin_x11 makes one screen per CRTC that drives a connected output and never
+asks for the RandR 1.5 monitors, which are what Xinerama and the toolkits
+report. On a server whose one framebuffer a client splits into monitors — a
+streamed desktop, where Selkies publishes one monitor per display over the
+single output a framebuffer server has — every screen of kwin's therefore spans
+the whole framebuffer, and a maximized window covers every display at once.
+
+Screens are now the monitors wherever the server reports any, each keeping the
+CRTC, rotation, refresh rate and EDID of its first driven output; a server that
+defines no monitors reports one per active output, so real hardware is
+unchanged, and a server without RandR 1.5 takes the CRTC path as before.
+Selkies announces a monitor change through an output property, since
+RRSetMonitor emits no event of its own, so output property notifications are
+selected and re-read the outputs the way a screen change does.
+
+Applies to kwin-x11 6.6.x (verified against 6.6.4).
+
+--- a/src/utils/xcbutils.cpp
++++ b/src/utils/xcbutils.cpp
+@@ -424,7 +424,7 @@
+     }
+     if (m_randr.present) {
+         randrVersion = xcb_randr_query_version_unchecked(c, RANDR_MAX_MAJOR, RANDR_MAX_MINOR);
+-        xcb_randr_select_input(connection(), rootWindow(), XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
++        xcb_randr_select_input(connection(), rootWindow(), XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE | XCB_RANDR_NOTIFY_MASK_OUTPUT_PROPERTY);
+     }
+     if (m_damage.present) {
+         damageVersion = xcb_damage_query_version_unchecked(c, DAMAGE_MAX_MAJOR, DAMAGE_MIN_MAJOR);
+--- a/src/backends/x11/standalone/x11_standalone_backend.cpp
++++ b/src/backends/x11/standalone/x11_standalone_backend.cpp
+@@ -64,17 +64,26 @@
+ };
+ 
+ XrandrEventFilter::XrandrEventFilter(X11StandaloneBackend *backend)
+-    : X11EventFilter(Xcb::Extensions::self()->randrNotifyEvent())
++    : X11EventFilter(QList<int>{Xcb::Extensions::self()->randrNotifyEvent(),
++                                Xcb::Extensions::self()->randrNotifyEvent() + (XCB_RANDR_NOTIFY - XCB_RANDR_SCREEN_CHANGE_NOTIFY)})
+     , m_backend(backend)
+ {
+ }
+ 
+ bool XrandrEventFilter::event(xcb_generic_event_t *event)
+ {
+-    Q_ASSERT((event->response_type & ~0x80) == Xcb::Extensions::self()->randrNotifyEvent());
++    const int type = event->response_type & ~0x80;
++    Q_ASSERT(type == Xcb::Extensions::self()->randrNotifyEvent()
++             || type == Xcb::Extensions::self()->randrNotifyEvent() + (XCB_RANDR_NOTIFY - XCB_RANDR_SCREEN_CHANGE_NOTIFY));
+     // let's try to gather a few XRandR events, unlikely that there is just one
+     m_backend->scheduleUpdateOutputs();
+ 
++    // An output property notify: the monitor set may have changed while the
++    // screen kept its size, and the screen has nothing to update from it.
++    if (type != Xcb::Extensions::self()->randrNotifyEvent()) {
++        return false;
++    }
++
+     // update default screen
+     auto *xrrEvent = reinterpret_cast<xcb_randr_screen_change_notify_event_t *>(event);
+     xcb_screen_t *screen = Xcb::defaultScreen();
+@@ -291,16 +300,10 @@
+         if (!resources.isNull()) {
+ 
+             std::span crtcs(resources.crtcs(), resources->num_crtcs);
+-            for (auto crtc : crtcs) {
+-                Xcb::RandR::CrtcInfo info(crtc, resources->config_timestamp);
+-
+-                const QRect geometry = info.rect();
+-                if (!geometry.isValid()) {
+-                    continue;
+-                }
+ 
++            // The refresh rate of the mode a CRTC drives, -1 when it has none.
++            auto refreshRateOf = [&resources](Xcb::RandR::CrtcInfo &info) {
+                 float refreshRate = -1.0f;
+-
+                 for (auto mode : std::span(resources.modes(), resources->num_modes)) {
+                     if (info->mode == mode.id) {
+                         if (mode.htotal != 0 && mode.vtotal != 0) { // BUG 313996
+@@ -318,53 +321,57 @@
+                         break; // found mode
+                     }
+                 }
++                return refreshRate;
++            };
+ 
+-                for (auto xcbOutput : std::span(info.outputs(), info->num_outputs)) {
+-                    Xcb::RandR::OutputInfo outputInfo(xcbOutput, resources->config_timestamp);
+-                    if (outputInfo->crtc != crtc || outputInfo->connection != XCB_RANDR_CONNECTION_CONNECTED) {
+-                        continue;
+-                    }
+-
+-                    X11Output *output = findX11Output(outputInfo.name());
+-                    if (output) {
+-                        changed.append(output);
+-                        removed.removeOne(output);
+-                    } else {
+-                        output = new X11Output(this);
+-                        added.append(output);
+-                    }
++            // Realizes the screen `name` at `geometry`: driven by `crtc` (XCB_NONE for
++            // none) at `refreshRate`, identified by the EDID of `xcbOutput` (XCB_NONE
++            // for none), placed at `xineramaNumber` in the Xinerama order.
++            auto realize = [&](const QString &name, const QRect &geometry, xcb_randr_crtc_t crtc,
++                               float refreshRate, QSize physicalSize, uint16_t rotation,
++                               int xineramaNumber, xcb_randr_output_t xcbOutput) {
++                X11Output *output = findX11Output(name);
++                if (output) {
++                    changed.append(output);
++                    removed.removeOne(output);
++                } else {
++                    output = new X11Output(this);
++                    added.append(output);
++                }
+ 
+-                    // TODO: Perhaps the output has to save the inherited gamma ramp and
+-                    // restore it during tear down. Currently neither standalone x11 nor
+-                    // drm platform do this.
++                // TODO: Perhaps the output has to save the inherited gamma ramp and
++                // restore it during tear down. Currently neither standalone x11 nor
++                // drm platform do this.
++                int gammaRampSize = 0;
++                if (crtc != XCB_NONE) {
+                     Xcb::RandR::CrtcGamma gamma(crtc);
++                    gammaRampSize = gamma.isNull() ? 0 : gamma->size;
++                }
+ 
+-                    output->setRenderLoop(m_renderLoop.get());
+-                    output->setCrtc(crtc);
+-                    output->setGammaRampSize(gamma.isNull() ? 0 : gamma->size);
+-                    auto it = std::find(crtcs.begin(), crtcs.end(), crtc);
+-                    int crtcIndex = std::distance(crtcs.begin(), it);
+-                    output->setXineramaNumber(crtcIndex);
+-
+-                    QSize physicalSize(outputInfo->mm_width, outputInfo->mm_height);
+-                    switch (info->rotation) {
+-                    case XCB_RANDR_ROTATION_ROTATE_0:
+-                    case XCB_RANDR_ROTATION_ROTATE_180:
+-                        break;
+-                    case XCB_RANDR_ROTATION_ROTATE_90:
+-                    case XCB_RANDR_ROTATION_ROTATE_270:
+-                        physicalSize.transpose();
+-                        break;
+-                    case XCB_RANDR_ROTATION_REFLECT_X:
+-                    case XCB_RANDR_ROTATION_REFLECT_Y:
+-                        break;
+-                    }
++                output->setRenderLoop(m_renderLoop.get());
++                output->setCrtc(crtc);
++                output->setGammaRampSize(gammaRampSize);
++                output->setXineramaNumber(xineramaNumber);
++
++                switch (rotation) {
++                case XCB_RANDR_ROTATION_ROTATE_0:
++                case XCB_RANDR_ROTATION_ROTATE_180:
++                    break;
++                case XCB_RANDR_ROTATION_ROTATE_90:
++                case XCB_RANDR_ROTATION_ROTATE_270:
++                    physicalSize.transpose();
++                    break;
++                case XCB_RANDR_ROTATION_REFLECT_X:
++                case XCB_RANDR_ROTATION_REFLECT_Y:
++                    break;
++                }
+ 
+-                    X11Output::Information information{
+-                        .name = outputInfo.name(),
+-                        .physicalSize = physicalSize,
+-                    };
++                X11Output::Information information{
++                    .name = name,
++                    .physicalSize = physicalSize,
++                };
+ 
++                if (xcbOutput != XCB_NONE) {
+                     auto edidProperty = Xcb::RandR::OutputProperty(xcbOutput, atoms->edid, XCB_ATOM_INTEGER, 0, 100, false, false);
+                     bool ok;
+                     if (auto data = edidProperty.toByteArray(&ok); ok && !data.isEmpty()) {
+@@ -375,17 +382,93 @@
+                             information.edid = edid;
+                         }
+                     }
++                }
+ 
+-                    auto mode = std::make_shared<OutputMode>(geometry.size(), refreshRate * 1000);
++                auto mode = std::make_shared<OutputMode>(geometry.size(), refreshRate * 1000);
+ 
+-                    X11Output::State state = output->m_state;
+-                    state.modes = {mode};
+-                    state.currentMode = mode;
+-                    state.position = geometry.topLeft();
++                X11Output::State state = output->m_state;
++                state.modes = {mode};
++                state.currentMode = mode;
++                state.position = geometry.topLeft();
++
++                output->setInformation(information);
++                output->setState(state);
++            };
++
++            // RandR 1.5 monitors are the screens Xinerama and the toolkits report, and
++            // several may share one CRTC when a client splits the framebuffer (a
++            // streamed desktop); a server that defines none reports one per active
++            // output, so they are the screens wherever the server has any.
++            bool fromMonitors = false;
++            UniqueCPtr<xcb_randr_get_monitors_reply_t> monitors(
++                xcb_randr_get_monitors_reply(connection(), xcb_randr_get_monitors_unchecked(connection(), rootWindow(), 1), nullptr));
++            if (monitors) {
++                int xineramaNumber = 0;
++                for (auto it = xcb_randr_get_monitors_monitors_iterator(monitors.get()); it.rem; xcb_randr_monitor_info_next(&it)) {
++                    const xcb_randr_monitor_info_t *monitor = it.data;
++                    const QRect geometry(monitor->x, monitor->y, monitor->width, monitor->height);
++                    if (!geometry.isValid()) {
++                        continue;
++                    }
++                    UniqueCPtr<xcb_get_atom_name_reply_t> atomName(
++                        xcb_get_atom_name_reply(connection(), xcb_get_atom_name_unchecked(connection(), monitor->name), nullptr));
++                    if (!atomName) {
++                        continue;
++                    }
++                    const QString name = QString::fromLatin1(xcb_get_atom_name_name(atomName.get()), xcb_get_atom_name_name_length(atomName.get()));
++                    if (name.isEmpty()) {
++                        continue;
++                    }
++                    // The CRTC behind the monitor's first driven output carries the
++                    // refresh rate, the gamma ramp and the rotation; the identity is
++                    // that output's.
++                    xcb_randr_crtc_t crtc = XCB_NONE;
++                    xcb_randr_output_t xcbOutput = XCB_NONE;
++                    float refreshRate = -1.0f;
++                    uint16_t rotation = XCB_RANDR_ROTATION_ROTATE_0;
++                    for (auto candidate : std::span(xcb_randr_monitor_info_outputs(monitor), xcb_randr_monitor_info_outputs_length(monitor))) {
++                        Xcb::RandR::OutputInfo outputInfo(candidate, resources->config_timestamp);
++                        if (outputInfo.isNull() || outputInfo->crtc == XCB_NONE) {
++                            continue;
++                        }
++                        Xcb::RandR::CrtcInfo info(outputInfo->crtc, resources->config_timestamp);
++                        if (info.isNull()) {
++                            continue;
++                        }
++                        crtc = outputInfo->crtc;
++                        xcbOutput = candidate;
++                        refreshRate = refreshRateOf(info);
++                        rotation = info->rotation;
++                        break;
++                    }
++                    realize(name, geometry, crtc, refreshRate,
++                            QSize(monitor->width_in_millimeters, monitor->height_in_millimeters), rotation,
++                            xineramaNumber++, xcbOutput);
++                    fromMonitors = true;
++                }
++            }
+ 
+-                    output->setInformation(information);
+-                    output->setState(state);
+-                    break;
++            if (!fromMonitors) {
++                for (auto crtc : crtcs) {
++                    Xcb::RandR::CrtcInfo info(crtc, resources->config_timestamp);
++
++                    const QRect geometry = info.rect();
++                    if (!geometry.isValid()) {
++                        continue;
++                    }
++                    const float refreshRate = refreshRateOf(info);
++
++                    for (auto xcbOutput : std::span(info.outputs(), info->num_outputs)) {
++                        Xcb::RandR::OutputInfo outputInfo(xcbOutput, resources->config_timestamp);
++                        if (outputInfo->crtc != crtc || outputInfo->connection != XCB_RANDR_CONNECTION_CONNECTED) {
++                            continue;
++                        }
++                        auto it = std::find(crtcs.begin(), crtcs.end(), crtc);
++                        realize(outputInfo.name(), geometry, crtc, refreshRate,
++                                QSize(outputInfo->mm_width, outputInfo->mm_height), info->rotation,
++                                std::distance(crtcs.begin(), it), xcbOutput);
++                        break;
++                    }
+                 }
+             }
+         }
