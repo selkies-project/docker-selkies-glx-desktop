@@ -37,6 +37,10 @@ DISPLAY_NUM="${DISPLAY_NUM%%.*}"
 if [ -n "${DISPLAY_NUM}" ] && ! pgrep -f "Xorg ${DISPLAY}( |$)" > /dev/null 2>&1; then
   rm -f "/tmp/.X${DISPLAY_NUM}-lock" "/tmp/.X11-unix/X${DISPLAY_NUM}"
 fi
+# The server creates its socket directories only as root; made here so an
+# unprivileged run (Apptainer) still gets the path sockets.
+# shellcheck disable=SC2174  # /tmp always exists, so -m applies to the leaf
+mkdir -pm1777 /tmp/.X11-unix /tmp/.ICE-unix 2>/dev/null || true
 
 # The server is told to share a virtual terminal it never switches to, and the
 # terminal it names has to exist: a pseudo-terminal stands in for it, which a
