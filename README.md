@@ -97,7 +97,7 @@ apptainer run --nv --writable-tmpfs --contain --cleanenv \
     docker://ghcr.io/selkies-project/selkies-glx-desktop:26.04
 ```
 
-Reach it with `ssh -L 8080:<node>:$PORT <login-node>` and open `https://localhost:8080`. Where the host keeps the modules elsewhere, `find / -name nvidia_drv.so` finds them; a module bound under its plain name (`libglxserver_nvidia.so`) is accepted too. Without the binds the image fetches the modules from the driver installer matching the host, which needs the node to reach NVIDIA's download server.
+Reach it with `ssh -L 8080:<node>:$PORT <login-node>` and open `https://localhost:8080`. Where the host keeps the modules elsewhere, `find / -name nvidia_drv.so` finds them; a module bound under its plain name (`libglxserver_nvidia.so`) is accepted too. Without the binds the image fetches the modules from the driver installer matching the host on every start, which needs the node to reach NVIDIA's download server; `--nvccli` binds no X modules either.
 
 ## Configuration
 
