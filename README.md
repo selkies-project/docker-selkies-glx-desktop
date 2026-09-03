@@ -80,20 +80,20 @@ The file requests an NVIDIA GPU through the NVIDIA device plugin. AMD and Intel 
 
 ### Running with Apptainer
 
-On a cluster without Docker, the image runs under Apptainer as an ordinary user, pulled straight from the registry, and its X.Org server runs on the GPU without root. Besides what the [Selkies documentation](https://selkies-project.github.io/selkies/start/#apptainer-and-slurm) explains for every image (a display number, a port and a private `/tmp` per job, a home directory of your own, `--writable-tmpfs`, `--nv`), this image needs the host driver's two X server modules bound to the paths the server loads them from, because Apptainer's `--nv` carries the driver's libraries but not its X modules; the version in the file names is the host driver's:
+On a cluster without Docker, the image runs under Apptainer as an ordinary user, pulled straight from the registry, and its X.Org server runs on the GPU without root. Besides what the [Selkies documentation](https://selkies-project.github.io/selkies/start/#apptainer) explains for every image (a display number and a port no other session on the node uses, a private `/tmp`, a home directory of your own, `--writable-tmpfs`, `--nv`), this image needs the host driver's two X server modules bound to the paths the server loads them from, because Apptainer's `--nv` carries the driver's libraries but not its X modules; the version in the file names is the host driver's:
 
 ```bash
 #!/bin/bash
-#SBATCH --gres=gpu:1
+N=$((RANDOM % 900 + 100))
+PORT=$((RANDOM % 10000 + 20000))
 mkdir -p "$HOME/selkies/home" "$HOME/selkies/tmp"
-export PORT=$((SLURM_JOB_ID % 10000 + 20000))
 X=/usr/lib/xorg/modules
 V=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)
 apptainer run --nv --writable-tmpfs --contain --cleanenv \
     --home "$HOME/selkies/home:/home/ubuntu" -B "$HOME/selkies/tmp:/tmp" -B /dev/dri \
     -B "$X/drivers/nvidia_drv.so:$X/drivers/nvidia_drv.so" \
     -B "$X/extensions/libglxserver_nvidia.so.$V:$X/extensions/libglxserver_nvidia.so.$V" \
-    --env "DISPLAY=:$((SLURM_JOB_ID % 900 + 100)),SELKIES_PORT=$PORT,PASSWD=mypasswd" \
+    --env "DISPLAY=:$N,SELKIES_PORT=$PORT,PASSWD=mypasswd" \
     docker://ghcr.io/selkies-project/selkies-glx-desktop:26.04
 ```
 
