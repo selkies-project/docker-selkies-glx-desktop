@@ -29,6 +29,9 @@ DISPLAY_REFRESH="${DISPLAY_REFRESH:-60}"
 DISPLAY_CDEPTH="${DISPLAY_CDEPTH:-24}"
 XORG_CONF="/etc/X11/xorg.conf"
 XORG_MODULES="/usr/lib/xorg/modules"
+# A second module directory for the generated config, for modules bound in
+# elsewhere than the X server's tree
+MODULE_PATH_EXTRA=""
 
 log() { echo "[xorg] $*" >&2; }
 
@@ -82,10 +85,12 @@ first_nvidia_pci() {
 # Make sure nvidia_drv.so and the NVIDIA GLX server module of the host driver's
 # exact version are in place. A container runtime that injects the driver's
 # X server modules along with its libraries (the NVIDIA Container Toolkit
-# does, under the graphics capability) leaves nothing to do; where it injects
-# only the libraries, the modules are lifted out of the driver's own
-# installer, the only place they are shipped, fetched once per driver
-# version. A container that keeps its filesystem keeps them across restarts.
+# does, under the graphics capability) leaves nothing to do; one that puts
+# them on the dynamic loader's path (Apptainer's --nv) gets them listed as a
+# module path; where it injects only the libraries, the modules are lifted
+# out of the driver's own installer, the only place they are shipped, fetched
+# once per driver version. A container that keeps its filesystem keeps them
+# across restarts.
 stage_nvidia_modules() {
   local version arch archive extracted
   version="${NVIDIA_DRIVER_VERSION:-}"
@@ -109,6 +114,19 @@ stage_nvidia_modules() {
   if [ -f "${XORG_MODULES}/drivers/nvidia_drv.so" ] && [ -f "${XORG_MODULES}/extensions/libglxserver_nvidia.so" ]; then
     return 0
   fi
+  # Modules on the loader's path are linked under the names the server loads
+  # into a directory of their own, which the config names as a module path
+  local dir glx
+  for dir in $(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' ' '); do
+    [ -f "${dir}/nvidia_drv.so" ] || continue
+    glx="$(ls "${dir}"/libglxserver_nvidia.so* 2>/dev/null | head -n 1)"
+    [ -n "${glx}" ] || continue
+    MODULE_PATH_EXTRA="$(mktemp -d "${TMPDIR:-/tmp}/xorg-modules.XXXXXX")"
+    ln -s "${dir}/nvidia_drv.so" "${MODULE_PATH_EXTRA}/nvidia_drv.so"
+    ln -s "${glx}" "${MODULE_PATH_EXTRA}/libglxserver_nvidia.so"
+    log "using the NVIDIA X server modules from ${dir}"
+    return 0
+  done
   arch="$(uname -m)"
   archive="NVIDIA-Linux-${arch}-${version}.run"
   extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-modules.XXXXXX")"
@@ -192,9 +210,19 @@ case "${driver}" in
     else
       port_option="Option         \"ConnectedMonitor\" \"${video_port}\""
     fi
+    # A Files section replaces the default module path, so it is repeated
+    files_section=""
+    if [ -n "${MODULE_PATH_EXTRA}" ]; then
+      files_section="Section \"Files\"
+    ModulePath     \"${MODULE_PATH_EXTRA}\"
+    ModulePath     \"${XORG_MODULES}\"
+EndSection
+"
+    fi
     cat > "${XORG_CONF}" <<EOF
 # Written by selkies-xorg-config for the GPU at ${pci}; edits are lost at the
 # next start.
+${files_section}
 Section "ServerLayout"
     Identifier     "Layout0"
     Screen      0  "Screen0" 0 0

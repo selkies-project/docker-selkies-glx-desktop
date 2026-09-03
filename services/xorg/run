@@ -106,5 +106,19 @@ if [ "${DRIVER}" != "nvidia" ]; then
     echo "[xorg] no output took ${mode}; the desktop has no screen" >&2
   fi
 fi
+# The toolkits take their screens from the RandR outputs, and a server that
+# reports none leaves the session with nothing to place a window on: Qt maps no
+# panel and the desktop is a black stream. The NVIDIA driver finds no display
+# device on a board that has no display engine, the datacenter GPUs, and sets
+# the mode "NULL" on a virtual screen of the configured size. The framebuffer
+# server of the base container runs the same session on an output of its own,
+# so the session moves there rather than showing a desktop nobody can see.
+if [ "$(xrandr --display "${DISPLAY}" --query 2>/dev/null | grep -c ' connected\| disconnected')" = "0" ]; then
+  echo "[xorg] the ${DRIVER} driver exposes no output on this GPU, which leaves the desktop without a screen; running the framebuffer server instead" >&2
+  kill "${XORG_PID}" 2>/dev/null
+  wait "${XORG_PID}" 2>/dev/null
+  exec /usr/local/bin/selkies-xvfb-server
+fi
+
 echo "[xorg] ${DISPLAY} is serving clients on the ${DRIVER} driver"
 wait "${XORG_PID}"

@@ -177,14 +177,17 @@ Applies to kwin-x11 6.6.x (verified against 6.6.4).
                      auto edidProperty = Xcb::RandR::OutputProperty(xcbOutput, atoms->edid, XCB_ATOM_INTEGER, 0, 100, false, false);
                      bool ok;
                      if (auto data = edidProperty.toByteArray(&ok); ok && !data.isEmpty()) {
-@@ -375,17 +382,93 @@
+@@ -375,17 +382,96 @@
                              information.edid = edid;
                          }
                      }
 +                }
  
 -                    auto mode = std::make_shared<OutputMode>(geometry.size(), refreshRate * 1000);
-+                auto mode = std::make_shared<OutputMode>(geometry.size(), refreshRate * 1000);
++                // A monitor that drives no CRTC carries no mode to take a rate
++                // from, and a screen without one is refused as bogus.
++                const float rate = refreshRate > 0.0f ? refreshRate : 60.0f;
++                auto mode = std::make_shared<OutputMode>(geometry.size(), rate * 1000);
  
 -                    X11Output::State state = output->m_state;
 -                    state.modes = {mode};

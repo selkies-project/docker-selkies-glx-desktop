@@ -222,6 +222,7 @@ RUN mkdir -pm755 /opt/proot-apps && \
 COPY --chown=1000:1000 selkies-xorg-config /usr/local/bin/selkies-xorg-config
 COPY --chown=1000:1000 services/ /etc/service/
 RUN chmod -f 755 /usr/local/bin/selkies-xorg-config && \
+    install -m 755 /etc/service/xvfb/run /usr/local/bin/selkies-xvfb-server && \
     rm -rf /etc/service/xvfb /etc/service/wayland && \
     find /etc/service \( -name run -o -name finish \) -exec chmod -f 755 {} +
 
