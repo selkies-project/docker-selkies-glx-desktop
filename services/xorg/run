@@ -113,7 +113,8 @@ fi
 # the mode "NULL" on a virtual screen of the configured size. The framebuffer
 # server of the base container runs the same session on an output of its own,
 # so the session moves there rather than showing a desktop nobody can see.
-if [ "$(xrandr --display "${DISPLAY}" --query 2>/dev/null | grep -c ' connected\| disconnected')" = "0" ]; then
+if outputs="$(xrandr --display "${DISPLAY}" --query 2>/dev/null)" \
+   && [ "$(printf '%s\n' "${outputs}" | grep -c ' connected\| disconnected')" = "0" ]; then
   echo "[xorg] the ${DRIVER} driver exposes no output on this GPU, which leaves the desktop without a screen; running the framebuffer server instead" >&2
   kill "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
