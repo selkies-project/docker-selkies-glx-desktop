@@ -25,7 +25,7 @@ spec:
       - name: xgl
         # Tags: `26.04` (Ubuntu 26.04, the current build), a persistent build
         # such as `26.04-20260101010101`, and `latest`
-        image: ghcr.io/selkies-project/selkies-xgl-desktop:26.04
+        image: ghcr.io/selkies-project/selkies-glx-desktop:26.04
         env:
         - name: TZ
           value: "UTC"
