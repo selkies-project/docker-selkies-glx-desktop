@@ -77,6 +77,28 @@ The file requests an NVIDIA GPU through the NVIDIA device plugin. AMD and Intel 
 
 **4. If the desktop loads but does not stream, read [WebRTC and Firewall Issues](#webrtc-and-firewall-issues).**
 
+
+### Running with Apptainer
+
+On a cluster without Docker, the image runs under Apptainer as an ordinary user, pulled straight from the registry, and its X.Org server runs on the GPU without root. Besides what the [Selkies documentation](https://selkies-project.github.io/selkies/start/#apptainer-and-slurm) explains for every image (a display number, a port and a private `/tmp` per job, a home directory of your own, `--writable-tmpfs`, `--nv`), this image needs the host driver's two X server modules bound to the paths the server loads them from, because Apptainer's `--nv` carries the driver's libraries but not its X modules; the version in the file names is the host driver's:
+
+```bash
+#!/bin/bash
+#SBATCH --gres=gpu:1
+mkdir -p "$HOME/selkies/home" "$HOME/selkies/tmp"
+export PORT=$((SLURM_JOB_ID % 10000 + 20000))
+X=/usr/lib/xorg/modules
+V=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n 1)
+apptainer run --nv --writable-tmpfs --contain --cleanenv \
+    --home "$HOME/selkies/home:/home/ubuntu" -B "$HOME/selkies/tmp:/tmp" -B /dev/dri \
+    -B "$X/drivers/nvidia_drv.so:$X/drivers/nvidia_drv.so" \
+    -B "$X/extensions/libglxserver_nvidia.so.$V:$X/extensions/libglxserver_nvidia.so.$V" \
+    --env "DISPLAY=:$((SLURM_JOB_ID % 900 + 100)),SELKIES_PORT=$PORT,PASSWD=mypasswd" \
+    docker://ghcr.io/selkies-project/selkies-glx-desktop:26.04
+```
+
+Reach it with `ssh -L 8080:<node>:$PORT <login-node>` and open `https://localhost:8080`. Where the host keeps the modules elsewhere, `find / -name nvidia_drv.so` finds them; a module bound under its plain name (`libglxserver_nvidia.so`) is accepted too. Without the binds the image fetches the modules from the driver installer matching the host, which needs the node to reach NVIDIA's download server.
+
 ## Configuration
 
 Everything Selkies reads is an environment variable named in [`docs/settings.md`](https://github.com/selkies-project/selkies/blob/main/docs/settings.md) (`selkies --help` inside the container lists the same). The ones this image adds or that matter most:

@@ -104,6 +104,11 @@ stage_nvidia_modules() {
       || ln -snf "libglxserver_nvidia.so.${version}" "${XORG_MODULES}/extensions/libglxserver_nvidia.so"
     return 0
   fi
+  # The modules bound in under their plain names (an Apptainer bind of the
+  # host's) are the driver's own as well: the server loads the plain name.
+  if [ -f "${XORG_MODULES}/drivers/nvidia_drv.so" ] && [ -f "${XORG_MODULES}/extensions/libglxserver_nvidia.so" ]; then
+    return 0
+  fi
   arch="$(uname -m)"
   archive="NVIDIA-Linux-${arch}-${version}.run"
   extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-modules.XXXXXX")"

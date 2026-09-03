@@ -19,8 +19,14 @@ on:
         default: main-ubuntu26.04
   push:
     branches: [ main ]
+    paths-ignore:
+      - README.md
+      - LICENSE
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - README.md
+      - LICENSE
 
 permissions:
   contents: read
