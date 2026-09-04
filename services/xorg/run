@@ -120,7 +120,7 @@ if [ "${READY}" != "true" ]; then
     | grep -v -E 'logind|module does not exist|PreInit returned|No input driver|\(EE\) *$' \
     | tail -n 6 | sed 's/^/[xorg]   /' >&2
   if grep -q 'modesetting permission' "${XDG_RUNTIME_DIR}/Xorg.log" 2>/dev/null; then
-    echo "[xorg]   a refused modesetting permission is a GPU display held by the host's own session, or a GPU whose card node is not in the container (a container toolkit older than 1.20 needs --device /dev/dri)" >&2
+    echo "[xorg]   a refused modesetting permission is a GPU display held by the host's own session, or a GPU whose card node the container was not given; --device /dev/dri passes it" >&2
   fi
   failures=$(( $(cat "${FAILURES}" 2>/dev/null || echo 0) + 1 ))
   printf '%s' "${failures}" > "${FAILURES}"
