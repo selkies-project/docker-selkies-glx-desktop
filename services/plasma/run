@@ -43,5 +43,25 @@ fi
 # kwin_x11 and the shell; kwin_x11 takes its screens from the RandR monitors
 # Selkies publishes (patches/kwin-x11/), so a second display is a screen of
 # its own.
+# The shell lays its panels and wallpaper out for the DPI it started at, and
+# follows a later change only in part: at the new DPI the wallpaper covers a
+# fraction of the screen and the panels keep their old pixel geometry. A DPI
+# the client sets is stamped into the X resources, so the shell is replaced
+# when that value changes and lays out afresh; windows stay where they are.
+(
+  read_dpi() { xrdb -query 2>/dev/null | awk '/^Xft.dpi:/ {print $2}'; }
+  last="$(read_dpi)"
+  while sleep 2; do
+    dpi="$(read_dpi)"
+    if [ -n "${dpi}" ] && [ "${dpi}" != "${last}" ]; then
+      last="${dpi}"
+      if pgrep -x plasmashell > /dev/null 2>&1; then
+        echo "[plasma] DPI is now ${dpi}; replacing the shell so it lays out for it"
+        plasmashell --replace > /dev/null 2>&1 &
+      fi
+    fi
+  done
+) &
+
 echo "[plasma] session draws on ${DISPLAY}"
 exec startplasma-x11
