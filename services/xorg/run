@@ -42,6 +42,34 @@ fi
 # shellcheck disable=SC2174  # /tmp always exists, so -m applies to the leaf
 mkdir -pm1777 /tmp/.X11-unix /tmp/.ICE-unix 2>/dev/null || true
 
+# Whether the GPU's display is free to take. A server becomes the DRM master
+# of the GPU it sets modes on, and a device has one master: on a machine whose
+# GPU also drives the host's own session, or where the runtime gave the
+# container no card node, the NVIDIA driver fails its screen with a refused
+# modesetting permission, as the modesetting driver would. Asked here so the
+# session comes up on the framebuffer server with the reason named, rather
+# than the server respawning into the same refusal. Exit 2 is a held display;
+# a node that cannot be opened at all is left to the server to report.
+drm_master_free() {
+  python3 - "$1" <<'EOF'
+import errno, fcntl, os, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR)
+except OSError:
+    sys.exit(0)
+try:
+    fcntl.ioctl(fd, 0x641e)
+    fcntl.ioctl(fd, 0x641f)
+except OSError as e:
+    sys.exit(2 if e.errno in (errno.EACCES, errno.EBUSY, errno.EPERM) else 0)
+EOF
+}
+CARD="$(cat "${XDG_RUNTIME_DIR}/xorg-card" 2>/dev/null)"
+if [ -n "${CARD}" ] && [ -e "${CARD}" ] && ! drm_master_free "${CARD}"; then
+  echo "[xorg] another display server holds the GPU's display (${CARD}): a GPU that drives the host's own session cannot be taken by a second server, so the framebuffer server runs the session instead; the EGL image renders on such a GPU through its render node" >&2
+  exec /usr/local/bin/selkies-xvfb-server
+fi
+
 # The server is told to share a virtual terminal it never switches to, and the
 # terminal it names has to exist: a pseudo-terminal stands in for it, which a
 # container is not given by default.
@@ -76,12 +104,34 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
+# A server that never answered is given one more start, with what its log
+# blames printed here rather than left in a file; a second failure hands the
+# session to the framebuffer server, so a GPU that cannot carry an X server
+# costs the desktop its acceleration and not the session. The count lives
+# beside the container's environment file and is stale once that file is
+# newer, so a container restart begins afresh.
+FAILURES="${XDG_RUNTIME_DIR}/xorg-failures"
+[ "${FAILURES}" -nt "${XDG_RUNTIME_DIR}/container-env" ] || rm -f "${FAILURES}"
 if [ "${READY}" != "true" ]; then
-  echo "[xorg] ${DISPLAY} did not answer within 30s; restarting the server (see ${XDG_RUNTIME_DIR}/Xorg.log)" >&2
   kill -9 "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
+  echo "[xorg] ${DISPLAY} did not answer within 30s; the server's log (${XDG_RUNTIME_DIR}/Xorg.log) says:" >&2
+  grep -E '\(EE\)' "${XDG_RUNTIME_DIR}/Xorg.log" 2>/dev/null \
+    | grep -v -E 'logind|module does not exist|PreInit returned|No input driver|\(EE\) *$' \
+    | tail -n 6 | sed 's/^/[xorg]   /' >&2
+  if grep -q 'modesetting permission' "${XDG_RUNTIME_DIR}/Xorg.log" 2>/dev/null; then
+    echo "[xorg]   a refused modesetting permission is a GPU display held by the host's own session, or a GPU whose card node is not in the container (a container toolkit older than 1.20 needs --device /dev/dri)" >&2
+  fi
+  failures=$(( $(cat "${FAILURES}" 2>/dev/null || echo 0) + 1 ))
+  printf '%s' "${failures}" > "${FAILURES}"
+  if [ "${failures}" -ge 2 ]; then
+    echo "[xorg] the server failed to start twice; the framebuffer server runs the session instead" >&2
+    exec /usr/local/bin/selkies-xvfb-server
+  fi
+  echo "[xorg] restarting the server once" >&2
   exit 1
 fi
+rm -f "${FAILURES}"
 
 # A KMS driver with nothing plugged in brings its outputs up disconnected and
 # lights none of them, so the desktop would have no screen: the configured mode

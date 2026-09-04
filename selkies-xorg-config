@@ -193,6 +193,12 @@ if [ -z "${pci}" ] || [ -z "${driver}" ]; then
   exit 1
 fi
 busid="$(xorg_busid "${pci}")"
+# The GPU's KMS node, for the service to see whether its display is free
+# before the server claims it; empty where the runtime gave none.
+card_node=""
+card="$(ls -d /sys/bus/pci/devices/${pci}/drm/card* 2>/dev/null | head -n 1)"
+[ -n "${card}" ] && [ -e "/dev/dri/$(basename "${card}")" ] && card_node="/dev/dri/$(basename "${card}")"
+printf '%s' "${card_node}" > "${XDG_RUNTIME_DIR}/xorg-card"
 
 # A modeline for the configured size: no monitor answers with one here
 modeline="$(cvt -r "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" | sed -n '2p')"
