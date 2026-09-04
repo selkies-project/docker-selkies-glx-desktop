@@ -27,7 +27,7 @@ This image is X11 only; the base's Wayland backend is not offered here. Containe
 With an NVIDIA GPU (the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is required):
 
 ```bash
-docker run --name xgl -it -d --gpus 1 --shm-size=2g -e TZ=UTC -e PASSWD=mypasswd -e VIDEO_PORT=DFP -p 8080:8080 ghcr.io/selkies-project/selkies-glx-desktop:26.04
+docker run --name xgl -it -d --gpus 1 --runtime nvidia --shm-size=2g -e TZ=UTC -e PASSWD=mypasswd -e VIDEO_PORT=DFP -p 8080:8080 ghcr.io/selkies-project/selkies-glx-desktop:26.04
 ```
 
 With an AMD or Intel GPU, pass the DRM devices in instead. The session user inside the container (uid 1000) must be able to open them, which `--group-add` covers when the host's `render` and `video` groups own the nodes, and no X server or compositor on the host may be driving that GPU:
@@ -151,7 +151,7 @@ Self-hosted WebRTC needs a [TURN server](https://github.com/selkies-project/selk
 <details markdown>
   <summary>Open Answer</summary>
 
-Check that the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is configured on the host and the container was started with `--gpus`, that the host driver is not the `nvidia-headless` variant (it lacks the graphics libraries), and that `NVIDIA_DRIVER_CAPABILITIES` inside the container is `all` or includes `graphics` (OpenGL, Vulkan), `video` (NVENC), `display` (the X driver's modesetting device, and Vulkan) and `compute`. The container's log shows the X server configuration it wrote and, if the server did not come up, points at its log; `docker exec xgl cat /tmp/runtime-ubuntu/Xorg.log` reads it. The first start needs to download the driver installer matching the host driver, so it needs network access to NVIDIA's download servers; `NVIDIA_DRIVER_VERSION` names the version when the host's cannot be read.
+Check that the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is configured on the host and the container was started with `--gpus`, that the host driver is not the `nvidia-headless` variant (it lacks the graphics libraries), and that `NVIDIA_DRIVER_CAPABILITIES` inside the container is `all` or includes `graphics` (OpenGL, Vulkan), `video` (NVENC), `display` (the X driver's modesetting device, and Vulkan) and `compute`. An X server needs to be the GPU's only display server: on a GPU that also drives the host's own session, the driver refuses the container's server its modesetting permission, and the container then runs the session on the base's framebuffer server and says so in its log; the EGL image renders on such a GPU through its render node, with the desktop on either of its backends. The container's log shows the X server configuration it wrote and, if the server did not come up, the errors from its log; `docker exec xgl cat /tmp/runtime-ubuntu/Xorg.log` reads the rest. The first start needs to download the driver installer matching the host driver, so it needs network access to NVIDIA's download servers; `NVIDIA_DRIVER_VERSION` names the version when the host's cannot be read.
 
 </details>
 
@@ -160,7 +160,7 @@ Check that the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/clo
 <details markdown>
   <summary>Open Answer</summary>
 
-The container needs `/dev/dri` (`--device=/dev/dri:rwm`) and the session user must be able to open the nodes: add the host's `render` and `video` groups with `--group-add`, or as a last resort `sudo chmod -R 777 /dev/dri` on the host. An X server needs to be the GPU's only display server: a desktop or another X server on the host driving the same GPU keeps this one from starting (`/tmp/runtime-ubuntu/Xorg.log` says so). GPUs without a display engine (datacenter accelerators) have no output to light and belong on [docker-selkies-egl-desktop](https://github.com/selkies-project/docker-selkies-egl-desktop).
+The container needs `/dev/dri` (`--device=/dev/dri:rwm`) and the session user must be able to open the nodes: add the host's `render` and `video` groups with `--group-add`, or as a last resort `sudo chmod -R 777 /dev/dri` on the host. An X server needs to be the GPU's only display server: a desktop or another X server on the host driving the same GPU keeps this one from taking it, and the container then runs the session on the framebuffer server and says so in its log. GPUs without a display engine (datacenter accelerators) have no output to light and belong on [docker-selkies-egl-desktop](https://github.com/selkies-project/docker-selkies-egl-desktop).
 
 </details>
 
