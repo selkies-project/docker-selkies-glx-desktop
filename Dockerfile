@@ -144,6 +144,10 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
         fi; \
     done && \
     dpkg -i ${debs} && \
+    # The device notifier announces every display Selkies creates, including the
+    # session's own at startup. Its KDED module ignores an autoload override, and
+    # a container has no hardware hotplug for it to report.
+    rm -f /usr/lib/*/qt6/plugins/kf6/kded/devicenotifications.so && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # Session defaults in the system scope, so a user's own settings still win:
