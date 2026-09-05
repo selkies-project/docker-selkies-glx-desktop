@@ -242,6 +242,126 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
+# Wine, for the Windows applications that are not games and the games that
+# Steam does not manage. WineHQ's own repository rather than the distribution
+# package, because Wine moves fast and the staging branch is what the
+# compatibility reports assume; the repository publishes per Ubuntu codename,
+# so the codename is read from the image rather than pinned. Wine is x86 and
+# needs the 32-bit runtime for anything older than 64-bit Windows, so this is
+# amd64 only. Winetricks comes from its own repository, where it is released
+# continuously and the packaged copy is always behind.
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        dpkg --add-architecture i386 && \
+        mkdir -pm755 /etc/apt/keyrings && \
+        curl -o /etc/apt/keyrings/winehq-archive.asc -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://dl.winehq.org/wine-builds/winehq.key" && \
+        codename="$(grep '^VERSION_CODENAME=' /etc/os-release | cut -d= -f2 | tr -d '\"')" && \
+        curl -o "/etc/apt/sources.list.d/winehq-${codename}.sources" -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://dl.winehq.org/wine-builds/ubuntu/dists/${codename}/winehq-${codename}.sources" && \
+        # apt reads a keyring only from a name that says how it is encoded, and
+        # the file WineHQ's own instructions name says neither
+        sed -i 's|^Signed-By:.*|Signed-By: /etc/apt/keyrings/winehq-archive.asc|' "/etc/apt/sources.list.d/winehq-${codename}.sources" && \
+        apt-get clean && apt-get update && \
+        apt-get install --install-recommends -y winehq-staging && \
+        curl -o /usr/bin/winetricks -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" && \
+        chmod -f 755 /usr/bin/winetricks && \
+        curl -o /usr/share/bash-completion/completions/winetricks -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks.bash-completion"; \
+    fi && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
+
+# The rest of a desktop: a media player that plays what the browsers will not,
+# the KDE applications a Plasma session is expected to come with, and the
+# command-line tools a session with a terminal is unusable without. Only the
+# Qt6 builds are taken; the Plasma 5 leftovers in the archive would drag a
+# second toolkit in for one application each.
+RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
+        # Media playback, with the codecs the distribution's default ffmpeg
+        # build leaves out
+        vlc \
+        vlc-plugin-access-extra \
+        vlc-plugin-notify \
+        vlc-plugin-samba \
+        vlc-plugin-skins2 \
+        vlc-plugin-video-splitter \
+        vlc-plugin-visualization \
+        libavcodec-extra \
+        # Documents and viewers
+        libreoffice \
+        libreoffice-kf6 \
+        libreoffice-plasma \
+        libreoffice-style-breeze \
+        okular \
+        okular-extra-backends \
+        # The KDE utilities, and the Plasma add-ons a panel and desktop expect
+        kde-baseapps \
+        kdeadmin \
+        kcalc \
+        kcharselect \
+        kde-spectacle \
+        kdeconnect \
+        kfind \
+        kget \
+        kmix \
+        kmag \
+        kmouth \
+        kmousetool \
+        ktimer \
+        kdf \
+        filelight \
+        sweeper \
+        kinfocenter \
+        kmenuedit \
+        dolphin-plugins \
+        kdegraphics-thumbnailers \
+        kwin-addons \
+        plasma-browser-integration \
+        plasma-calendar-addons \
+        plasma-dataengines-addons \
+        plasma-runners-addons \
+        plasma-widgets-addons \
+        transmission-qt \
+        # Discover pulls PackageKit and AppStream in itself
+        plasma-discover \
+        # Spell checking, which the KDE text components look for at runtime
+        # through Enchant rather than linking against
+        aspell \
+        aspell-en \
+        hunspell \
+        enchant-2 \
+        # A session with a terminal is expected to have these
+        vim \
+        htop \
+        git \
+        net-tools \
+        netcat-openbsd \
+        xsel \
+        xterm \
+        apache2-utils \
+        haveged \
+        unrar \
+        unar \
+        software-properties-common \
+        software-properties-qt \
+        ubuntu-drivers-common && \
+    # The RAR compressor is x86 only; its extractors above are not
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get install --no-install-recommends -y rar; \
+    fi && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
+
+# The X.Org drivers for the GPUs this image can be given beyond the ones the
+# server has built in: the vendor DDX modules for AMD, NVIDIA's open driver and
+# the rest, the QXL driver for a virtual machine's display, and the Wacom input
+# driver. The legacy Intel DDX is left out on purpose, since the modesetting
+# driver the server carries supersedes it and handles those GPUs better.
+RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
+        xserver-xorg-video-all \
+        xserver-xorg-video-qxl \
+        xserver-xorg-input-wacom && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
+
 # The X server's configuration tool and the session's own s6 services. The
 # xorg service replaces the base's framebuffer server outright, and the
 # Wayland backend's session compositor service goes with it: this image is
