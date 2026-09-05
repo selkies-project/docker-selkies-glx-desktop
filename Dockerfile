@@ -29,6 +29,8 @@ ARG DISTRIB_IMAGE="ubuntu"
 ARG DISTRIB_RELEASE="26.04"
 # The Selkies revision the shared helper scripts are taken from
 ARG SELKIES_REF="main"
+# The selkies-bwrap revision Steam's bubblewrap stand-in is installed from
+ARG SELKIES_BWRAP_REF="main"
 
 # The X11 window manager, rebuilt from the archive with a patch: stock kwin_x11
 # makes one screen per CRTC and spans the displays Selkies publishes as RandR
@@ -64,6 +66,7 @@ LABEL org.opencontainers.image.licenses="MPL-2.0"
 
 ARG DEBIAN_FRONTEND="noninteractive"
 ARG SELKIES_REF
+ARG SELKIES_BWRAP_REF
 
 # The base ships its setuid and setgid files owned by root, and dpkg replaces a
 # file by hardlinking the old one aside first -- which the kernel denies uid
@@ -217,6 +220,27 @@ RUN mkdir -pm755 /opt/proot-apps && \
     curl -o /usr/local/bin/selkies-proot -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 \
         "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/desktop/selkies-proot" && \
     chmod -f 755 /usr/local/bin/selkies-proot
+
+# Steam, and the games it launches, in a container without user namespaces.
+# The client runs its browser helper, its compatibility tools and every game
+# through pressure-vessel, which builds a container with bubblewrap; bubblewrap
+# needs a user namespace or CAP_SYS_ADMIN and a container's seccomp profile
+# grants neither, so a stock Steam stops at its own requirements check with
+# "Steam now requires user namespaces to be enabled". selkies-bwrap takes the
+# place pressure-vessel reads from $BWRAP when its own bubblewrap fails and
+# builds those containers through fakechroot, or the proot above where the
+# fakechroot library is missing. The Steam Linux Runtime is used exactly as
+# Valve ships it, so native Linux games get the libraries they were built
+# against and Proton runs through the runtime it asks for. The installer brings
+# Steam itself, the 32-bit libraries its client and games need, and the wiring
+# into Steam's own launcher, so every way of starting it carries the stand-in.
+# The Steam client is x86 only and is left out of every other architecture.
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        curl -o /tmp/selkies-bwrap-install.sh -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://raw.githubusercontent.com/selkies-project/selkies-bwrap/${SELKIES_BWRAP_REF}/install.sh" && \
+        sh /tmp/selkies-bwrap-install.sh; \
+    fi && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # The X server's configuration tool and the session's own s6 services. The
 # xorg service replaces the base's framebuffer server outright, and the
