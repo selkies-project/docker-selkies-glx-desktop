@@ -80,7 +80,13 @@ The file requests an NVIDIA GPU through the NVIDIA device plugin. AMD and Intel 
 
 ### Running with Apptainer
 
-On a cluster without Docker, the image runs under Apptainer as an ordinary user, pulled straight from the registry, and its X.Org server runs on the GPU without root. Besides what the [Selkies documentation](https://selkies-project.github.io/selkies/start/#apptainer) explains for every image (a display number and a port no other session on the node uses, a private `/tmp`, a home directory of your own, `--writable-tmpfs`, `--nv`), this image needs the host driver's two X server modules bound to the paths the server loads them from, because Apptainer's `--nv` carries the driver's libraries but not its X modules; the version in the file names is the host driver's:
+On a cluster without Docker, the image runs under Apptainer as an ordinary user, pulled straight from the registry, and its X.Org server runs on the GPU without root. Besides what the [Selkies documentation](https://selkies-project.github.io/selkies/start/#apptainer) explains for every image (a display number and a port no other session on the node uses, a private `/tmp`, a home directory of your own, `--writable-tmpfs`, `--nv`), the X server needs the host driver's two X server modules at the paths it loads them from. An Apptainer whose `--nv` binds them there needs nothing more; check with
+
+```bash
+apptainer exec --nv docker://ghcr.io/selkies-project/selkies-glx-desktop:26.04 ls /usr/lib/xorg/modules/drivers/nvidia_drv.so
+```
+
+and when the file is missing, bind the two modules from the host; the version in the file names is the host driver's:
 
 ```bash
 #!/bin/bash
@@ -97,7 +103,7 @@ apptainer run --nv --writable-tmpfs --contain --cleanenv \
     docker://ghcr.io/selkies-project/selkies-glx-desktop:26.04
 ```
 
-Reach it with `ssh -L 8080:<node>:$PORT <login-node>` and open `https://localhost:8080`. Where the host keeps the modules elsewhere, `find / -name nvidia_drv.so` finds them; a module bound under its plain name (`libglxserver_nvidia.so`) is accepted too. Without the binds the image fetches the modules from the driver installer matching the host on every start, which needs the node to reach NVIDIA's download server; `--nvccli` binds no X modules either.
+Reach it with `ssh -L 8080:<node>:$PORT <login-node>` and open `https://localhost:8080`. Where the host keeps the modules elsewhere, `find / -name nvidia_drv.so` finds them; a module bound under its plain name (`libglxserver_nvidia.so`) is accepted too. Without the modules the image fetches them from the driver installer matching the host on every start, which needs the node to reach NVIDIA's download server. `--nvccli` stages the modules exactly when `--nv` does.
 
 ## Configuration
 
