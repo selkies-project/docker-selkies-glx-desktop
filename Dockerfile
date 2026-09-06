@@ -362,8 +362,11 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
 RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
         xserver-xorg-video-all \
         xserver-xorg-video-qxl \
-        xserver-xorg-video-intel \
         xserver-xorg-input-wacom && \
+    # Intel integrated graphics are x86, and so is their driver
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get install --no-install-recommends -y xserver-xorg-video-intel; \
+    fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # The X server's configuration tool and the session's own s6 services. The
