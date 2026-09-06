@@ -353,12 +353,16 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
 
 # The X.Org drivers for the GPUs this image can be given beyond the ones the
 # server has built in: the vendor DDX modules for AMD, NVIDIA's open driver and
-# the rest, the QXL driver for a virtual machine's display, and the Wacom input
-# driver. The legacy Intel DDX is left out on purpose, since the modesetting
-# driver the server carries supersedes it and handles those GPUs better.
+# the rest, the QXL driver for a virtual machine's display, the Wacom input
+# driver, and the legacy Intel DDX for hardware older than the modesetting
+# driver serves well. None of them is chosen by autoconfiguration here, because
+# selkies-xorg-config writes a Device section naming the driver and the GPU's
+# bus address; the Intel one in particular loads only if that file is replaced,
+# which is the one case it exists for.
 RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
         xserver-xorg-video-all \
         xserver-xorg-video-qxl \
+        xserver-xorg-video-intel \
         xserver-xorg-input-wacom && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
