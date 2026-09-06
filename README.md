@@ -140,7 +140,7 @@ The dashboard's apps panel installs applications from the [proot-apps](https://g
 
 ### Steam
 
-Steam is installed on x86, and starts from the application menu or `steam` like anywhere else. The client containerizes its browser helper and every game with [bubblewrap](https://github.com/containers/bubblewrap), which needs a user namespace this container does not have, so [selkies-bwrap](https://github.com/selkies-project/selkies-bwrap) stands in for it behind Steam's own launcher. The [Steam Linux Runtime](https://gitlab.steamos.cloud/steamrt) is used exactly as Valve ships it, so native Linux games get the libraries they were built against and Proton runs through the runtime it asks for; enable Steam Play for all titles under `Steam > Settings > Compatibility` to pick a Proton version. Games and Proton prefixes live in the home directory, so mount a volume at `/home/ubuntu` to keep them.
+Steam is installed on x86, and starts from the application menu or `steam` like anywhere else. The client containerizes its browser helper and every game with [bubblewrap](https://github.com/containers/bubblewrap), which needs a user namespace this container does not have, so [proot-bwrap](https://github.com/selkies-project/proot-bwrap) stands in for it behind Steam's own launcher. The [Steam Linux Runtime](https://gitlab.steamos.cloud/steamrt) is used exactly as Valve ships it, so native Linux games get the libraries they were built against and Proton runs through the runtime it asks for; enable Steam Play for all titles under `Steam > Settings > Compatibility` to pick a Proton version. Games and Proton prefixes live in the home directory, so mount a volume at `/home/ubuntu` to keep them.
 
 ### Wine
 
