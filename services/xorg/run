@@ -156,16 +156,21 @@ if [ "${DRIVER}" != "nvidia" ]; then
     echo "[xorg] no output took ${mode}; the desktop has no screen" >&2
   fi
 fi
-# The toolkits take their screens from the RandR outputs, and a server that
-# reports none leaves the session with nothing to place a window on: Qt maps no
-# panel and the desktop is a black stream. The NVIDIA driver finds no display
-# device on a board that has no display engine, the datacenter GPUs, and sets
-# the mode "NULL" on a virtual screen of the configured size. The framebuffer
-# server of the base container runs the same session on an output of its own,
-# so the session moves there rather than showing a desktop nobody can see.
+# The toolkits take their screens from the RandR outputs, and the Plasma shell
+# reads the order it places panels and desktops from them too, so a server
+# reporting none leaves the session with nothing to lay out on and the desktop
+# is a black stream. Most datacenter GPUs carry virtual display devices for the
+# configured video port to light and never reach this; a board that reports no
+# display device at all, and `VIDEO_PORT=none`, get a virtual screen of the
+# configured size with no output on it. The framebuffer server of the base
+# container runs the same session on an output of its own and keeps the GPU:
+# its glamor draws on the render node and the entrypoint routes GLX to the
+# vendor's own client library through DRI3, so what moving there costs is the
+# capture path, which grabs through shared memory rather than reading the
+# screen where the driver composited it.
 if outputs="$(xrandr --display "${DISPLAY}" --query 2>/dev/null)" \
    && [ "$(printf '%s\n' "${outputs}" | grep -c ' connected\| disconnected')" = "0" ]; then
-  echo "[xorg] the ${DRIVER} driver exposes no output on this GPU, which leaves the desktop without a screen; running the framebuffer server instead" >&2
+  echo "[xorg] the ${DRIVER} driver exposes no output on this GPU, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for rendering and encoding and costs only the zero-copy capture path" >&2
   kill "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
   exec /usr/local/bin/selkies-xvfb-server
