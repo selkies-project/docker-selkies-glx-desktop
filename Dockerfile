@@ -277,8 +277,7 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
 # Qt6 builds are taken; the Plasma 5 leftovers in the archive would drag a
 # second toolkit in for one application each.
 RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
-        # Media playback, with the codecs the distribution's default ffmpeg
-        # build leaves out
+        # Media playback; the extra codecs it falls back to are in the base
         vlc \
         vlc-plugin-access-extra \
         vlc-plugin-notify \
@@ -286,7 +285,6 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
         vlc-plugin-skins2 \
         vlc-plugin-video-splitter \
         vlc-plugin-visualization \
-        libavcodec-extra \
         # Documents and viewers
         libreoffice \
         libreoffice-kf6 \
@@ -324,31 +322,13 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
         transmission-qt \
         # Discover pulls PackageKit and AppStream in itself
         plasma-discover \
-        # Spell checking, which the KDE text components look for at runtime
-        # through Enchant rather than linking against
-        aspell \
-        aspell-en \
-        hunspell \
-        enchant-2 \
-        # A session with a terminal is expected to have these
-        vim \
-        htop \
-        git \
-        net-tools \
-        netcat-openbsd \
-        xsel \
+        # The terminal Steam's launcher falls back to, and the Ubuntu-only
+        # tools for the archives and drivers this image is built on. The rest
+        # of what a shell session wants is in the base, which is not a desktop
         xterm \
-        apache2-utils \
-        haveged \
-        unrar \
-        unar \
         software-properties-common \
         software-properties-qt \
         ubuntu-drivers-common && \
-    # The RAR compressor is x86 only; its extractors above are not
-    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        apt-get install --no-install-recommends -y rar; \
-    fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # The X.Org drivers for the GPUs this image can be given beyond the ones the
