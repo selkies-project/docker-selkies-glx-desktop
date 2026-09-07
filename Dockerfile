@@ -273,6 +273,34 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
+# The launchers that stand beside Steam: Lutris for its own runners and Wine,
+# Heroic for the Epic and GOG libraries. Neither is in the archive, so the
+# newest release is read from GitHub at build time. x86 only, as Steam and Wine
+# are; Heroic publishes no Linux package for another architecture.
+RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        LUTRIS_VERSION="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://api.github.com/repos/lutris/lutris/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')" && \
+        curl -o /tmp/lutris.deb -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://github.com/lutris/lutris/releases/download/v${LUTRIS_VERSION}/lutris_${LUTRIS_VERSION}_all.deb" && \
+        HEROIC_VERSION="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')" && \
+        curl -o /tmp/heroic.deb -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v${HEROIC_VERSION}/Heroic-${HEROIC_VERSION}-linux-$(dpkg --print-architecture).deb" && \
+        apt-get clean && apt-get update && \
+        apt-get install --no-install-recommends -y /tmp/lutris.deb /tmp/heroic.deb && \
+        rm -f /tmp/lutris.deb /tmp/heroic.deb && \
+        # Electron's sandbox wants what Chrome's does and a container grants
+        # neither, so the menu entry and the name a shell resolves both pass it
+        sed -i 's|^Exec=/opt/Heroic/heroic|Exec=/opt/Heroic/heroic --no-sandbox|' /usr/share/applications/heroic.desktop && \
+        grep -q -- '^Exec=/opt/Heroic/heroic --no-sandbox' /usr/share/applications/heroic.desktop && \
+        printf '#!/bin/sh\nexec /opt/Heroic/heroic --no-sandbox "$@"\n' > /usr/local/bin/heroic && \
+        chmod -f 755 /usr/local/bin/heroic; \
+    fi && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
+
+# Lutris installs into the games directory, which is on no default PATH.
+ENV PATH="${PATH}:/usr/local/games:/usr/games"
+
 # The rest of a desktop: a media player that plays what the browsers will not,
 # the KDE applications a Plasma session is expected to come with, and the
 # command-line tools a session with a terminal is unusable without. Only the
