@@ -82,6 +82,87 @@ first_nvidia_pci() {
   return 1
 }
 
+# The driver the GPU is running, which anything staged out of the installer has
+# to match exactly.
+driver_version() {
+  local version="${NVIDIA_DRIVER_VERSION:-}"
+  if [ -z "${version}" ] && [ -f /proc/driver/nvidia/version ]; then
+    version="$(head -n 1 /proc/driver/nvidia/version | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9.]+$/) {print $i; exit}}')"
+  fi
+  if [ -z "${version}" ] && command -v nvidia-smi > /dev/null 2>&1; then
+    version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n 1 | tr -d ' ')"
+  fi
+  [ -n "${version}" ] || return 1
+  printf '%s' "${version}"
+}
+
+# The driver's own installer, fetched and unpacked once into INSTALLER_TREE:
+# the X server modules and the 32-bit client libraries are shipped there and
+# nowhere else. A global rather than a printed path, so both callers share one
+# download and the trap below can remove the tree.
+INSTALLER_TREE=""
+prepare_installer_tree() {
+  local version="$1" arch archive extracted
+  [ -z "${INSTALLER_TREE}" ] || return 0
+  arch="$(uname -m)"
+  archive="NVIDIA-Linux-${arch}-${version}.run"
+  extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-driver.XXXXXX")"
+  log "fetching NVIDIA driver ${version}"
+  # Consumer and datacenter drivers are published under different paths; a
+  # version exists under exactly one of them
+  if ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
+         "https://international.download.nvidia.com/XFree86/Linux-${arch}/${version}/${archive}" \
+     && ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
+         "https://international.download.nvidia.com/tesla/${version}/${archive}"; then
+    log "NVIDIA driver ${version} cannot be downloaded; set NVIDIA_DRIVER_VERSION to a published one"
+    rm -rf "${extracted}"
+    return 1
+  fi
+  sh "${extracted}/${archive}" --extract-only --target "${extracted}/driver" > /dev/null
+  rm -f "${extracted}/${archive}"
+  INSTALLER_TREE="${extracted}/driver"
+}
+
+discard_installer_tree() {
+  [ -n "${INSTALLER_TREE}" ] || return 0
+  rm -rf "$(dirname "${INSTALLER_TREE}")"
+  INSTALLER_TREE=""
+}
+trap discard_installer_tree EXIT
+
+# The vendor's 32-bit client libraries, which a container runtime brings in
+# only where the host installed them and its own discovery covers them. Without
+# them a 32-bit application renders on llvmpipe while everything 64-bit reaches
+# the GPU. They go where the loader is already told to look.
+stage_nvidia_compat32() {
+  local version target name file
+  target="/usr/local/nvidia/lib"
+  [ "$(dpkg --print-architecture)" = "amd64" ] || return 0
+  if ls /usr/lib/i386-linux-gnu/libGLX_nvidia.so.* "${target}"/libGLX_nvidia.so.* > /dev/null 2>&1; then
+    return 0
+  fi
+  version="$(driver_version)" || return 1
+  prepare_installer_tree "${version}" || return 1
+  log "staging the 32-bit libraries of NVIDIA driver ${version}"
+  mkdir -p "${target}"
+  # The driver's own libraries alone: the installer's libGL, libEGL, libGLX and
+  # libGLdispatch are glvnd's, which the distribution's i386 packages provide,
+  # and the compute stack beyond what a game's physics asks for stays behind.
+  for name in libGLX_nvidia libEGL_nvidia libGLESv1_CM_nvidia libGLESv2_nvidia \
+              libnvidia-glcore libnvidia-eglcore libnvidia-glsi libnvidia-glvkspirv \
+              libnvidia-gpucomp libnvidia-tls libnvidia-allocator libnvidia-egl-gbm \
+              libnvidia-egl-wayland libnvidia-egl-xcb libnvidia-egl-xlib \
+              libvdpau_nvidia libnvidia-ml libcuda libnvidia-ptxjitcompiler; do
+    for file in "${INSTALLER_TREE}/32/${name}."*; do
+      [ -f "${file}" ] || continue
+      install -m 755 "${file}" "${target}/"
+    done
+  done
+  # The links the loader asks for, and the cache the graphics stack is captured
+  # through: LD_LIBRARY_PATH alone does not reach Steam's own containers.
+  ldconfig 2> /dev/null || ldconfig -n "${target}"
+}
+
 # Make sure nvidia_drv.so and the NVIDIA GLX server module of the host driver's
 # exact version are in place. A container runtime that injects the driver's
 # X server modules along with its libraries (the NVIDIA Container Toolkit
@@ -92,15 +173,8 @@ first_nvidia_pci() {
 # once per driver version. A container that keeps its filesystem keeps them
 # across restarts.
 stage_nvidia_modules() {
-  local version arch archive extracted
-  version="${NVIDIA_DRIVER_VERSION:-}"
-  if [ -z "${version}" ] && [ -f /proc/driver/nvidia/version ]; then
-    version="$(head -n 1 /proc/driver/nvidia/version | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9.]+$/) {print $i; exit}}')"
-  fi
-  if [ -z "${version}" ] && command -v nvidia-smi > /dev/null 2>&1; then
-    version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n 1 | tr -d ' ')"
-  fi
-  if [ -z "${version}" ]; then
+  local version
+  if ! version="$(driver_version)"; then
     log "the NVIDIA driver version cannot be read; set NVIDIA_DRIVER_VERSION"
     return 1
   fi
@@ -127,30 +201,16 @@ stage_nvidia_modules() {
     log "using the NVIDIA X server modules from ${dir}"
     return 0
   done
-  arch="$(uname -m)"
-  archive="NVIDIA-Linux-${arch}-${version}.run"
-  extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-modules.XXXXXX")"
+  prepare_installer_tree "${version}" || return 1
   log "staging the X server modules of NVIDIA driver ${version}"
-  # Consumer and datacenter drivers are published under different paths; a
-  # version exists under exactly one of them
-  if ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
-         "https://international.download.nvidia.com/XFree86/Linux-${arch}/${version}/${archive}" \
-     && ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
-         "https://international.download.nvidia.com/tesla/${version}/${archive}"; then
-    log "NVIDIA driver ${version} cannot be downloaded; set NVIDIA_DRIVER_VERSION to a published one"
-    rm -rf "${extracted}"
-    return 1
-  fi
-  sh "${extracted}/${archive}" --extract-only --target "${extracted}/driver" > /dev/null
   mkdir -p "${XORG_MODULES}/drivers" "${XORG_MODULES}/extensions"
   # A module of another version left from an earlier driver is replaced; one
   # the runtime mounted read-only is what it is
   for module in "drivers/nvidia_drv.so" "extensions/libglxserver_nvidia.so.${version}"; do
     [ -f "${XORG_MODULES}/${module}" ] && [ ! -w "${XORG_MODULES}/${module}" ] && continue
-    install -m 644 "${extracted}/driver/$(basename "${module}")" "${XORG_MODULES}/${module}"
+    install -m 644 "${INSTALLER_TREE}/$(basename "${module}")" "${XORG_MODULES}/${module}"
   done
   ln -snf "libglxserver_nvidia.so.${version}" "${XORG_MODULES}/extensions/libglxserver_nvidia.so"
-  rm -rf "${extracted}"
 }
 
 # The first KMS card node the container was given, for a GPU that came in as
@@ -207,6 +267,7 @@ mode="$(printf '%s' "${modeline}" | awk '{print $2}' | tr -d '"')"
 case "${driver}" in
   nvidia|nvidia-drm)
     stage_nvidia_modules
+    stage_nvidia_compat32 || true
     # A video port the driver reports connected keeps RandR outputs to hang
     # modes on and lets a monitor plugged there show the desktop; none at all
     # (VIDEO_PORT=none) leaves the server without RandR outputs
