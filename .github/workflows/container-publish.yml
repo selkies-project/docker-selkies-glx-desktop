@@ -16,7 +16,7 @@ on:
       base_tag:
         description: Tag of the Selkies base container to build on
         type: string
-        default: main-ubuntu26.04
+        default: latest-ubuntu26.04
   push:
     branches: [ main ]
     paths-ignore:
@@ -84,7 +84,7 @@ jobs:
           context: .
           platforms: ${{ matrix.arch.platform }}
           build-args: |
-            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'main-ubuntu26.04' }}
+            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
           cache-from: type=gha,scope=${{ matrix.arch.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}
@@ -99,7 +99,7 @@ jobs:
           context: .
           platforms: ${{ matrix.arch.platform }}
           build-args: |
-            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'main-ubuntu26.04' }}
+            BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}

@@ -24,7 +24,7 @@
 # X11 only: the base's Wayland backend is not offered here, since the whole
 # point of this image is the X server on the GPU.
 
-ARG BASE_IMAGE="ghcr.io/selkies-project/selkies/base:main-ubuntu26.04"
+ARG BASE_IMAGE="ghcr.io/selkies-project/selkies/base:latest-ubuntu26.04"
 ARG DISTRIB_IMAGE="ubuntu"
 ARG DISTRIB_RELEASE="26.04"
 # The Selkies revision the shared helper scripts are taken from

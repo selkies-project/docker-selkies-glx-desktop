@@ -231,7 +231,7 @@ Build on it the way [`docs/development.md`](https://github.com/selkies-project/s
 ## Building
 
 ```bash
-docker build -t selkies-glx-desktop --build-arg BASE_IMAGE=ghcr.io/selkies-project/selkies/base:main-ubuntu26.04 .
+docker build -t selkies-glx-desktop --build-arg BASE_IMAGE=ghcr.io/selkies-project/selkies/base:latest-ubuntu26.04 .
 ```
 
 `BASE_IMAGE` is any Ubuntu 26.04 Selkies base container, by tag or digest; `SELKIES_REF` names the Selkies revision the shared helper scripts are taken from (`main`).
