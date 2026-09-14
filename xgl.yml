@@ -60,18 +60,6 @@ spec:
         # plugged into that port shows the desktop
         - name: VIDEO_PORT
           value: "DFP"
-        # Video encoder: `h264enc` (default, hardware NVENC/VA-API when the GPU
-        # has it, x264 otherwise), `h264enc-striped`, or `jpeg`
-#        - name: SELKIES_ENCODER
-#          value: "h264enc"
-        # Initial video bitrate in kilobits per second and frames per second,
-        # both adjustable from the web interface
-        - name: SELKIES_VIDEO_BITRATE
-          value: "8000"
-        - name: SELKIES_FRAMERATE
-          value: "60"
-        - name: SELKIES_AUDIO_BITRATE
-          value: "128000"
         # The web login, on by default: `ubuntu` and PASSWD unless set here
         - name: SELKIES_ENABLE_BASIC_AUTH
           value: "true"

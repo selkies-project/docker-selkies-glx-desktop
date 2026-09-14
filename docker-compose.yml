@@ -59,14 +59,6 @@ services:
     # `DP-*` port, or `none` for a server without RandR outputs); a monitor
     # plugged into that port shows the desktop
     - VIDEO_PORT=DFP
-    # Video encoder: `h264enc` (default, hardware NVENC/VA-API when the GPU has
-    # it, x264 otherwise), `h264enc-striped`, or `jpeg`
-#    - SELKIES_ENCODER=h264enc
-    # Initial video bitrate in kilobits per second and frames per second, both
-    # adjustable from the web interface
-    - SELKIES_VIDEO_BITRATE=8000
-    - SELKIES_FRAMERATE=60
-    - SELKIES_AUDIO_BITRATE=128000
     # The web login, on by default: `ubuntu` and PASSWD unless set here
     - SELKIES_ENABLE_BASIC_AUTH=true
 #    - SELKIES_BASIC_AUTH_USER=ubuntu

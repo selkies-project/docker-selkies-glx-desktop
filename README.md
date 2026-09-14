@@ -117,14 +117,13 @@ Everything Selkies reads is an environment variable named in [`docs/settings.md`
 | `VIDEO_PORT` | `DFP` | NVIDIA GPUs: the video port the driver reports a monitor on (`DFP`, a `DP-*` port, or `none` to leave the server without RandR outputs); a monitor plugged into that port shows the desktop |
 | `NVIDIA_DRIVER_VERSION` | (the host's) | The driver installer to take the X server modules from, when the host's version cannot be read |
 | `SELKIES_MODE` | `websockets` | Transport: `websockets` or `webrtc`; both can be switched from the web interface |
-| `SELKIES_ENCODER` | `h264enc` | Video encoder: `h264enc` (hardware NVENC or VA-API when the GPU has it, x264 otherwise), `h264enc-striped`, or `jpeg` |
-| `SELKIES_VIDEO_BITRATE`, `SELKIES_FRAMERATE`, `SELKIES_AUDIO_BITRATE` | `8000`, `60`, `128000` | Initial stream parameters, adjustable from the web interface |
 | `SELKIES_ENABLE_HTTPS` | `true` | Serve TLS; `SELKIES_HTTPS_CERT` and `SELKIES_HTTPS_KEY` name a real certificate |
 | `SELKIES_ENABLE_BASIC_AUTH` | `true` | The web login, `ubuntu` and `PASSWD` unless `SELKIES_BASIC_AUTH_USER` and `SELKIES_BASIC_AUTH_PASSWORD` are set |
-| `SELKIES_SCALING_DPI` | `96` | The desktop's DPI, also adjustable from the web interface |
 | `SELKIES_AUTO_GPU`, `SELKIES_RENDER_DRI` | `true`, (empty) | Which GPU the X server and the session run on when the container was given several: the auto-selection pick, or a render node named outright |
 | `SELKIES_COMMAND_ENABLED` | `true` | The command channel behind the dashboard's apps panel; `false` disables it |
 | `START_PLASMA` | `true` | `false` runs the X server with kwin alone, no Plasma shell: a single application started from the apps panel or an attached shell is managed, resized and maximized without a desktop around it |
+
+The video encoder, the video and audio bitrates, the frame rate and the UI scaling are chosen from the web interface and are not set in the environment; a single value in `SELKIES_ENCODER` or `SELKIES_SCALING_DPI` locks that choice.
 
 The `SELKIES_TURN_*` variables configure the WebRTC transport, and `DISABLE_ZINK` is preset here: OpenGL goes through the X server's own GLX vendor, the NVIDIA driver included, rather than through Zink.
 
