@@ -1,0 +1,12 @@
+# No docker entry: every `FROM` in the Dockerfile names a build argument rather
+# than a literal image, and the tags those arguments carry float, so the publish
+# workflow's actions are the only pinned versions in the repository.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
