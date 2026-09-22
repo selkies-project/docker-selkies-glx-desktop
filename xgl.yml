@@ -146,8 +146,9 @@ spec:
           limits:
             memory: 64Gi
             cpu: "16"
-            # NVIDIA GPUs through the NVIDIA device plugin; AMD and Intel GPUs
-            # through their own plugins (`amd.com/gpu`, `gpu.intel.com/i915`)
+            # NVIDIA GPUs through the NVIDIA device plugin, over the NVIDIA Container
+            # Toolkit v1.20.1 or higher on the node; AMD and Intel GPUs through their
+            # own plugins (`amd.com/gpu`, `gpu.intel.com/i915`)
             nvidia.com/gpu: 1
           requests:
             memory: 100Mi
