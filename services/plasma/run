@@ -22,13 +22,13 @@ start_plasma="${start_plasma// /}"
 until [ -S "/tmp/.X11-unix/X${DISPLAY#*:}" ]; do sleep 0.5; done
 
 # The bus the dbus-session service serves: a fixed address every part of
-# Plasma, a shell attached to the container and the launcher behind the
+# Plasma, a shell attached to the container, and the launcher behind the
 # dashboards' apps panel reach without sharing an environment. startplasma
 # refuses to run without one.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/selkies-session-bus"
 until [ -S "${XDG_RUNTIME_DIR}/selkies-session-bus" ]; do sleep 0.5; done
 
-# Only the window manager: windows are managed, resized and maximized for a
+# Only the window manager: windows are managed, resized, and maximized for a
 # single application streamed without a desktop, the same as the Wayland
 # backend's kwin-only mode. kwin_x11 reads the session type it is started
 # under and the image's kwinrc, and registers on the session bus above.

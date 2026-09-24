@@ -8,7 +8,7 @@
 # replaced by X.Org running on the GPU.
 #
 # The base is the whole session apart from what it looks like -- display
-# servers, audio, GPU wiring, s6, coTURN and Selkies itself. This layer adds
+# servers, audio, GPU wiring, s6, coTURN, and Selkies itself. This layer adds
 # the desktop, Plasma on X11, the browsers, the proot-apps runner behind the
 # dashboards' apps panel, and the one thing the base does not have: an X.Org
 # server that owns a GPU (services/xorg), so OpenGL and Vulkan reach
@@ -60,7 +60,7 @@ FROM ${BASE_IMAGE}
 
 LABEL maintainer="https://github.com/danisla,https://github.com/ehfd"
 LABEL org.opencontainers.image.title="Selkies GLX Desktop Container"
-LABEL org.opencontainers.image.description="KDE Plasma desktop on the Selkies base container, on an X.Org server that owns the GPU (NVIDIA, AMD or Intel): OpenGL and Vulkan through the vendor's own X driver, s6 service supervision, embedded coTURN. X11 only."
+LABEL org.opencontainers.image.description="KDE Plasma desktop on the Selkies base container, on an X.Org server that owns the GPU (NVIDIA, AMD, or Intel): OpenGL and Vulkan through the vendor's own X driver, s6 service supervision, embedded coTURN. X11 only."
 LABEL org.opencontainers.image.source="https://github.com/selkies-project/docker-selkies-glx-desktop"
 LABEL org.opencontainers.image.licenses="MPL-2.0"
 
@@ -71,7 +71,7 @@ ARG PROOT_BWRAP_REF
 # The base ships its setuid and setgid files owned by root, and dpkg replaces a
 # file by hardlinking the old one aside first -- which the kernel denies uid
 # 1000 on a setuid file it does not own. Released for the layers below, an
-# archive update to util-linux, shadow, sudo, fuse3 or dbus is just another
+# archive update to util-linux, shadow, sudo, fuse3, or dbus is just another
 # package; without this it fails the layer that takes it. The helper is the
 # base's own; a base published before it carried one is given the copy the
 # Selkies repository ships.
@@ -123,7 +123,7 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
         systemsettings \
         # The applications a desktop is unusable without: file manager,
         # terminal, editor, image viewer, archiver, dialogs for scripts, the
-        # volume applet the panel loads and the system monitor it links to
+        # volume applet the panel loads, and the system monitor it links to
         dolphin \
         konsole \
         kwrite \
@@ -155,7 +155,7 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
 
 # Session defaults in the system scope, so a user's own settings still win:
 # no splash on a streamed desktop, no lock screen (a locked container session
-# has no local seat to unlock it) and no leave actions (logging out ends the
+# has no local seat to unlock it), and no leave actions (logging out ends the
 # session the stream is showing, and shutdown addresses an init this container
 # does not run), no compositing (every animation is bandwidth for nothing), and
 # no file indexing of a container home.
@@ -222,7 +222,7 @@ RUN mkdir -pm755 /opt/proot-apps && \
     chmod -f 755 /usr/local/bin/selkies-proot
 
 # Steam, and the games it launches, in a container without user namespaces.
-# The client runs its browser helper, its compatibility tools and every game
+# The client runs its browser helper, its compatibility tools, and every game
 # through pressure-vessel, which builds a container with bubblewrap; bubblewrap
 # needs a user namespace or CAP_SYS_ADMIN and a container's seccomp profile
 # grants neither, so a stock Steam stops at its own requirements check with
@@ -361,7 +361,7 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # The X.Org drivers for the GPUs this image can be given beyond the ones the
-# server has built in: the vendor DDX modules for AMD, NVIDIA's open driver and
+# server has built in: the vendor DDX modules for AMD, NVIDIA's open driver, and
 # the rest, the QXL driver for a virtual machine's display, the Wacom input
 # driver, and the legacy Intel DDX for hardware older than the modesetting
 # driver serves well. None of them is chosen by autoconfiguration here, because
@@ -424,7 +424,7 @@ ENV XDG_MENU_PREFIX="plasma-"
 # the NVIDIA driver included; the base routes NVIDIA GL through Zink only
 # because its framebuffer server has no GPU GLX to offer.
 ENV DISABLE_ZINK="true"
-# The X server's initial mode: the size, refresh rate and depth the GPU is
+# The X server's initial mode: the size, refresh rate, and depth the GPU is
 # configured with before the client's own size takes over (dynamic resizing is
 # on by default). VIDEO_PORT names the video port the NVIDIA driver reports a
 # monitor on, so RandR has an output to hang modes on and a monitor plugged

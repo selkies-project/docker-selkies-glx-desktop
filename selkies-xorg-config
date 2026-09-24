@@ -145,7 +145,7 @@ stage_nvidia_compat32() {
   prepare_installer_tree "${version}" || return 1
   log "staging the 32-bit libraries of NVIDIA driver ${version}"
   mkdir -p "${target}"
-  # The driver's own libraries alone: the installer's libGL, libEGL, libGLX and
+  # The driver's own libraries alone: the installer's libGL, libEGL, libGLX, and
   # libGLdispatch are glvnd's, which the distribution's i386 packages provide,
   # and the compute stack beyond what a game's physics asks for stays behind.
   for name in libGLX_nvidia libEGL_nvidia libGLESv1_CM_nvidia libGLESv2_nvidia \

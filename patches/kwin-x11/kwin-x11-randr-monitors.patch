@@ -227,7 +227,7 @@ Applies to kwin-x11 6.6.x (verified against 6.6.4).
 +                        continue;
 +                    }
 +                    // The CRTC behind the monitor's first driven output carries the
-+                    // refresh rate, the gamma ramp and the rotation; the identity is
++                    // refresh rate, the gamma ramp, and the rotation; the identity is
 +                    // that output's.
 +                    xcb_randr_crtc_t crtc = XCB_NONE;
 +                    xcb_randr_output_t xcbOutput = XCB_NONE;
