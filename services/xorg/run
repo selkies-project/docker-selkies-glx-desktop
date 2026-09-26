@@ -83,7 +83,7 @@ fi
 # nothing in this image unblanks one. The binary is run directly: the
 # distribution's wrapper only decides whether to keep root privileges, and this
 # server has none to keep.
-/usr/lib/xorg/Xorg "${DISPLAY}" vt7 -noreset -novtswitch -sharevts -nolisten "tcp" -ac -s 0 -dpms \
+/usr/lib/xorg/Xorg "${DISPLAY}" vt7 -noreset -novtswitch -sharevts -nolisten "tcp" -s 0 -dpms \
     +extension "COMPOSITE" +extension "DAMAGE" +extension "GLX" +extension "RANDR" +extension "RENDER" +extension "MIT-SHM" +extension "XFIXES" +extension "XTEST" \
     -config /etc/X11/xorg.conf -logfile "${XDG_RUNTIME_DIR}/Xorg.log" &
 XORG_PID=$!
@@ -132,6 +132,13 @@ if [ "${READY}" != "true" ]; then
   exit 1
 fi
 rm -f "${FAILURES}"
+# The display admits the session's user and root by the uid the kernel reports for
+# each connection, and no other local process: one that changed to another uid in
+# the container would otherwise read every keystroke. There is no cookie file for
+# a client to be told of.
+if ! xhost "+SI:localuser:$(id -un)" +SI:localuser:root -local: > /dev/null 2>&1; then
+    echo "[xorg] could not limit ${DISPLAY} to $(id -un) and root; it admits every local process" >&2
+fi
 
 # A KMS driver with nothing plugged in brings its outputs up disconnected and
 # lights none of them, so the desktop would have no screen: the configured mode
