@@ -140,17 +140,17 @@ if ! xhost "+SI:localuser:$(id -un)" +SI:localuser:root -local: > /dev/null 2>&1
     echo "[xorg] could not limit ${DISPLAY} to $(id -un) and root; it admits every local process" >&2
 fi
 
-# A KMS driver with nothing plugged in brings its outputs up disconnected and
-# lights none of them, so the desktop would have no screen: the configured mode
-# is attached to the first output that takes it, connected or not. The NVIDIA
-# driver's virtual video port carries its mode from the configuration.
+# A KMS driver lights no output by itself: the configured mode goes on the
+# first connected output that takes it. The NVIDIA driver's virtual video port
+# carries its mode from the configuration.
 if [ "${DRIVER}" != "nvidia" ]; then
   modeline="$(sed -n 's/^ *Modeline //p' /etc/X11/xorg.conf | head -n 1)"
   mode="$(printf '%s' "${modeline}" | awk '{print $1}' | tr -d '"')"
   lit=""
   # shellcheck disable=SC2086  # the modeline is a list of numbers
   xrandr --display "${DISPLAY}" --newmode ${modeline//\"/} > /dev/null 2>&1 || true
-  for output in $(xrandr --display "${DISPLAY}" --query | awk '/ connected| disconnected/ {print $1}'); do
+  connected="$(xrandr --display "${DISPLAY}" --query | awk '/ connected/ {print $1}')"
+  for output in ${connected}; do
     if xrandr --display "${DISPLAY}" --addmode "${output}" "${mode}" > /dev/null 2>&1 \
        && xrandr --display "${DISPLAY}" --output "${output}" --primary --mode "${mode}" > /dev/null 2>&1; then
       lit="${output}"
@@ -159,25 +159,25 @@ if [ "${DRIVER}" != "nvidia" ]; then
   done
   if [ -n "${lit}" ]; then
     echo "[xorg] ${mode} on output ${lit}"
-  else
-    echo "[xorg] no output took ${mode}; the desktop has no screen" >&2
+  elif [ -n "${connected}" ]; then
+    echo "[xorg] no connected output took ${mode}; the desktop has no screen" >&2
   fi
 fi
-# The toolkits take their screens from the RandR outputs, and the Plasma shell
-# reads the order it places panels and desktops from them too, so a server
-# reporting none leaves the session with nothing to lay out on and the desktop
-# is a black stream. Most datacenter GPUs carry virtual display devices for the
-# configured video port to light and never reach this; a board that reports no
-# display device at all, and `VIDEO_PORT=none`, get a virtual screen of the
-# configured size with no output on it. The framebuffer server of the base
-# container runs the same session on an output of its own and keeps the GPU:
-# its glamor draws on the render node and the entrypoint routes GLX to the
-# vendor's own client library through DRI3, so what moving there costs is the
-# capture path, which grabs through shared memory rather than reading the
-# screen where the driver composited it.
+# The toolkits take their screens from the RandR outputs, the Plasma shell lays
+# its panels and desktops out by the connected ones, and Selkies resizes only a
+# connected one, so a server with none leaves the session nothing to lay out on
+# and the desktop is a black stream, even where a mode lights a disconnected
+# output. Most datacenter GPUs carry virtual display devices for the configured
+# video port to light and never reach this; a board that reports no display
+# device at all, a KMS GPU with nothing plugged in, and `VIDEO_PORT=none` do.
+# The framebuffer server of the base container runs the same session on an
+# output of its own and keeps the GPU: its glamor draws on the render node and
+# the entrypoint routes GLX to the vendor's own client library through DRI3, so
+# what moving there costs is the capture path, which grabs through shared
+# memory rather than reading the screen where the driver composited it.
 if outputs="$(xrandr --display "${DISPLAY}" --query 2>/dev/null)" \
-   && [ "$(printf '%s\n' "${outputs}" | grep -c ' connected\| disconnected')" = "0" ]; then
-  echo "[xorg] the ${DRIVER} driver exposes no output on this GPU, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for rendering and encoding and costs only the zero-copy capture path" >&2
+   && [ "$(printf '%s\n' "${outputs}" | grep -c ' connected')" = "0" ]; then
+  echo "[xorg] no output of the ${DRIVER} GPU is connected, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for rendering and encoding and costs only the zero-copy capture path (a monitor or a display emulator plug on the GPU keeps this server)" >&2
   kill "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
   exec /usr/local/bin/selkies-xvfb-server
