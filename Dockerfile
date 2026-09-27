@@ -424,13 +424,12 @@ ENV XDG_MENU_PREFIX="plasma-"
 # the NVIDIA driver included; the base routes NVIDIA GL through Zink only
 # because its framebuffer server has no GPU GLX to offer.
 ENV DISABLE_ZINK="true"
-# The X server's initial mode: the size, refresh rate, and depth the GPU is
-# configured with before the client's own size takes over (dynamic resizing is
-# on by default). VIDEO_PORT names the video port the NVIDIA driver reports a
-# monitor on, so RandR has an output to hang modes on and a monitor plugged
-# there shows the desktop; `none` leaves the server without RandR outputs.
+# The X server's initial mode: the size and refresh rate the GPU is configured
+# with before the client's own size takes over (dynamic resizing is on by
+# default). VIDEO_PORT names the video port the NVIDIA driver reports a monitor
+# on, so RandR has an output to hang modes on and a monitor plugged there shows
+# the desktop; `none` leaves the server without RandR outputs.
 ENV DISPLAY_SIZEW="1920"
 ENV DISPLAY_SIZEH="1080"
 ENV DISPLAY_REFRESH="60"
-ENV DISPLAY_CDEPTH="24"
 ENV VIDEO_PORT="DFP"

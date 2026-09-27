@@ -26,7 +26,6 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
 DISPLAY_SIZEW="${DISPLAY_SIZEW:-1920}"
 DISPLAY_SIZEH="${DISPLAY_SIZEH:-1080}"
 DISPLAY_REFRESH="${DISPLAY_REFRESH:-60}"
-DISPLAY_CDEPTH="${DISPLAY_CDEPTH:-24}"
 # Selkies' own settings name the mode the session streams, so they win where
 # set: the size SELKIES_MANUAL_WIDTH and SELKIES_MANUAL_HEIGHT lock, and the
 # frame rate SELKIES_FRAMERATE starts at, read as settings.py reads it (its
@@ -281,6 +280,9 @@ printf '%s' "${card_node}" > "${XDG_RUNTIME_DIR}/xorg-card"
 modeline="$(cvt -r "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" | sed -n '2p')"
 mode="$(printf '%s' "${modeline}" | awk '{print $2}' | tr -d '"')"
 
+# The screen is 24 bits deep on either driver: Selkies captures and encodes
+# 8-bit BGRX, and a depth-30 server packs 10-bit channels into the same 32-bit
+# pixels, which the capture would read as garbage colors.
 case "${driver}" in
   nvidia|nvidia-drm)
     stage_nvidia_modules
@@ -347,9 +349,9 @@ Section "Screen"
     Identifier     "Screen0"
     Device         "Device0"
     Monitor        "Monitor0"
-    DefaultDepth    ${DISPLAY_CDEPTH}
+    DefaultDepth    24
     SubSection     "Display"
-        Depth       ${DISPLAY_CDEPTH}
+        Depth       24
         Modes      "${mode}"
         Virtual     ${DISPLAY_SIZEW} ${DISPLAY_SIZEH}
     EndSubSection
@@ -401,9 +403,9 @@ Section "Screen"
     Identifier     "Screen0"
     Device         "Device0"
     Monitor        "Monitor0"
-    DefaultDepth    ${DISPLAY_CDEPTH}
+    DefaultDepth    24
     SubSection     "Display"
-        Depth       ${DISPLAY_CDEPTH}
+        Depth       24
         Modes      "${mode}"
     EndSubSection
 EndSection
