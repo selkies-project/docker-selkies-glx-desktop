@@ -48,7 +48,8 @@ spec:
 #        - name: SELKIES_MODE
 #          value: "webrtc"
         # The X server's initial mode, replaced by the client's size once it
-        # connects (dynamic resizing is on by default)
+        # connects (dynamic resizing is on by default); SELKIES_MANUAL_WIDTH,
+        # SELKIES_MANUAL_HEIGHT, and the SELKIES_FRAMERATE value win where set
         - name: DISPLAY_SIZEW
           value: "1920"
         - name: DISPLAY_SIZEH

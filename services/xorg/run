@@ -145,7 +145,7 @@ fi
 # is attached to the first output that takes it, connected or not. The NVIDIA
 # driver's virtual video port carries its mode from the configuration.
 if [ "${DRIVER}" != "nvidia" ]; then
-  modeline="$(cvt -r "${DISPLAY_SIZEW:-1920}" "${DISPLAY_SIZEH:-1080}" "${DISPLAY_REFRESH:-60}" | sed -n '2p' | sed 's/^Modeline //')"
+  modeline="$(sed -n 's/^ *Modeline //p' /etc/X11/xorg.conf | head -n 1)"
   mode="$(printf '%s' "${modeline}" | awk '{print $1}' | tr -d '"')"
   lit=""
   for output in $(xrandr --display "${DISPLAY}" --query | awk '/ connected| disconnected/ {print $1}'); do

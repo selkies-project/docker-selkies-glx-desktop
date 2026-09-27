@@ -27,6 +27,23 @@ DISPLAY_SIZEW="${DISPLAY_SIZEW:-1920}"
 DISPLAY_SIZEH="${DISPLAY_SIZEH:-1080}"
 DISPLAY_REFRESH="${DISPLAY_REFRESH:-60}"
 DISPLAY_CDEPTH="${DISPLAY_CDEPTH:-24}"
+# Selkies' own settings name the mode the session streams, so they win where
+# set: the size SELKIES_MANUAL_WIDTH and SELKIES_MANUAL_HEIGHT lock, and the
+# frame rate SELKIES_FRAMERATE starts at, read as settings.py reads it (its
+# value, else the refresh above, clamped into its span).
+width="${SELKIES_MANUAL_WIDTH%%|*}"
+height="${SELKIES_MANUAL_HEIGHT%%|*}"
+[ "${width// /}" -gt 0 ] 2>/dev/null && DISPLAY_SIZEW="${width// /}"
+[ "${height// /}" -gt 0 ] 2>/dev/null && DISPLAY_SIZEH="${height// /}"
+DISPLAY_REFRESH="$(printf '%s' "${SELKIES_FRAMERATE%%|*}" | awk -F, -v rate="${DISPLAY_REFRESH}" '
+  { for (i = 1; i <= NF; i++) {
+      gsub(/[[:space:]]/, "", $i)
+      if ($i ~ /^[0-9.]+-[0-9.]+$/) { split($i, span, "-"); lo = span[1] + 0; hi = span[2] + 0 }
+      else if ($i ~ /^[0-9.]+$/) rate = $i + 0 } }
+  END { if (lo != "" && lo > hi) { t = lo; lo = hi; hi = t }
+        if (lo != "" && rate < lo) rate = lo
+        if (hi != "" && rate > hi) rate = hi
+        print rate }')"
 XORG_CONF="/etc/X11/xorg.conf"
 XORG_MODULES="/usr/lib/xorg/modules"
 # A second module directory for the generated config, for modules bound in
