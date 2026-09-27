@@ -90,7 +90,8 @@ first_nvidia_pci() {
   fi
   for gpu in /proc/driver/nvidia/gpus/*/; do
     [ -d "${gpu}" ] || continue
-    address="$(basename "${gpu}")"
+    address="${gpu%/}"
+    address="${address##*/}"
     [ -d "/sys/bus/pci/devices/${address}" ] && { printf '%s' "${address}"; return 0; }
   done
   return 1
@@ -207,11 +208,11 @@ stage_nvidia_modules() {
   local dir glx
   for dir in $(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' ' '); do
     [ -f "${dir}/nvidia_drv.so" ] || continue
-    glx="$(ls "${dir}"/libglxserver_nvidia.so* 2>/dev/null | head -n 1)"
-    [ -n "${glx}" ] || continue
+    glx=("${dir}"/libglxserver_nvidia.so*)
+    [ -f "${glx[0]}" ] || continue
     MODULE_PATH_EXTRA="$(mktemp -d "${TMPDIR:-/tmp}/xorg-modules.XXXXXX")"
     ln -s "${dir}/nvidia_drv.so" "${MODULE_PATH_EXTRA}/nvidia_drv.so"
-    ln -s "${glx}" "${MODULE_PATH_EXTRA}/libglxserver_nvidia.so"
+    ln -s "${glx[0]}" "${MODULE_PATH_EXTRA}/libglxserver_nvidia.so"
     log "using the NVIDIA X server modules from ${dir}"
     return 0
   done
@@ -233,8 +234,9 @@ stage_nvidia_modules() {
 first_card_pci() {
   local card address
   for card in /sys/class/drm/card[0-9]*; do
-    [ -e "/dev/dri/$(basename "${card}")" ] || continue
-    address="$(basename "$(readlink -f "${card}/device")")"
+    [ -e "/dev/dri/${card##*/}" ] || continue
+    address="$(readlink -f "${card}/device")"
+    address="${address##*/}"
     [ -d "/sys/bus/pci/devices/${address}" ] || continue
     case "$(driver_of_pci "${address}")" in nvidia*) continue ;; esac
     printf '%s' "${address}"
@@ -270,8 +272,8 @@ busid="$(xorg_busid "${pci}")"
 # The GPU's KMS node, for the service to see whether its display is free
 # before the server claims it; empty where the runtime gave none.
 card_node=""
-card="$(ls -d /sys/bus/pci/devices/${pci}/drm/card* 2>/dev/null | head -n 1)"
-[ -n "${card}" ] && [ -e "/dev/dri/$(basename "${card}")" ] && card_node="/dev/dri/$(basename "${card}")"
+card=(/sys/bus/pci/devices/"${pci}"/drm/card*)
+[ -e "/dev/dri/${card[0]##*/}" ] && card_node="/dev/dri/${card[0]##*/}"
 printf '%s' "${card_node}" > "${XDG_RUNTIME_DIR}/xorg-card"
 
 # A modeline for the configured size: no monitor answers with one here.
@@ -362,8 +364,7 @@ EOF
     echo "nvidia"
     ;;
   *)
-    card="$(ls -d /sys/bus/pci/devices/${pci}/drm/card* 2>/dev/null | head -n 1)"
-    if [ -z "${card}" ] || [ ! -e "/dev/dri/$(basename "${card}")" ]; then
+    if [ -z "${card_node}" ]; then
       log "the ${driver} GPU at ${pci} has no /dev/dri/card node here; pass --device /dev/dri"
       exit 1
     fi
@@ -397,7 +398,7 @@ Section "Device"
     Identifier     "Device0"
     Driver         "modesetting"
     BusID          "${busid}"
-    Option         "kmsdev" "/dev/dri/$(basename "${card}")"
+    Option         "kmsdev" "${card_node}"
 EndSection
 
 Section "Screen"
@@ -411,7 +412,7 @@ Section "Screen"
     EndSubSection
 EndSection
 EOF
-    log "${driver} GPU at ${pci} (${busid}) on /dev/dri/$(basename "${card}"), ${mode}"
+    log "${driver} GPU at ${pci} (${busid}) on ${card_node}, ${mode}"
     echo "modesetting"
     ;;
 esac
