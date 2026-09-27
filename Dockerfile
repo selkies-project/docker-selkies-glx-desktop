@@ -180,14 +180,17 @@ RUN mkdir -pm755 /etc/xdg && \
 # Google Chrome as a downloaded .deb for the H.264/AV1 media stack the
 # distribution Chromium builds do not carry. Chrome's own launcher script gains
 # two switches, so every way of starting it -- menu entry, xdg-open, a shell --
-# carries them: --no-sandbox, because Chrome's sandbox needs CAP_SYS_ADMIN for
-# its setuid helper or unprivileged user namespaces for its zygote, and a
-# container's default seccomp profile grants neither, so a stock Chrome aborts
-# at the zygote (the container is the isolation boundary here); and the basic
-# password store, because the container runs no keyring daemon to unlock and
-# Chrome otherwise blocks on a prompt nobody can answer. The downloads retry
-# every failure and the Chrome one is held to HTTP/1.1, since its server resets
-# HTTP/2 streams mid-transfer often enough to fail a build.
+# carries them. --no-sandbox where the container denies Chrome's sandbox, which
+# needs CAP_SYS_ADMIN for its setuid helper or unprivileged user namespaces for
+# its zygote: a container's default seccomp profile grants neither, and a stock
+# Chrome aborts at the zygote (the container is the isolation boundary there).
+# The launcher asks for the namespaces the zygote creates at every start and
+# keeps the sandbox wherever they are granted, as under an unconfined seccomp
+# profile. And the basic password store, because the container runs no keyring
+# daemon to unlock and Chrome otherwise blocks on a prompt nobody can answer.
+# The downloads retry every failure and the Chrome one is held to HTTP/1.1,
+# since its server resets HTTP/2 streams mid-transfer often enough to fail a
+# build.
 RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d && \
     curl -o /etc/apt/keyrings/packages.mozilla.org.asc -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 "https://packages.mozilla.org/apt/repo-signing-key.gpg" && \
     printf 'Types: deb\nURIs: https://packages.mozilla.org/apt\nSuites: mozilla\nComponents: main\nSigned-By: /etc/apt/keyrings/packages.mozilla.org.asc\n' > /etc/apt/sources.list.d/mozilla.sources && \
@@ -195,8 +198,8 @@ RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.
     curl -o /tmp/google-chrome-stable.deb -fsSL --http1.1 --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb" && \
     apt-get clean && apt-get update && \
     apt-get install --no-install-recommends -y firefox /tmp/google-chrome-stable.deb && \
-    sed -i 's|^exec -a "$0" "$HERE/chrome" "$@"$|exec -a "$0" "$HERE/chrome" --no-sandbox --password-store=basic "$@"|' /opt/google/chrome/google-chrome && \
-    grep -q -- '--no-sandbox --password-store=basic "$@"' /opt/google/chrome/google-chrome && \
+    sed -i 's#^exec -a "$0" "$HERE/chrome" "$@"$#exec -a "$0" "$HERE/chrome" $(unshare --user --map-root-user --pid --net --fork true 2> /dev/null || echo --no-sandbox) --password-store=basic "$@"#' /opt/google/chrome/google-chrome && \
+    grep -q -- '|| echo --no-sandbox) --password-store=basic "$@"' /opt/google/chrome/google-chrome && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # proot-apps (https://github.com/linuxserver/proot-apps) backs the dashboards'
@@ -293,11 +296,12 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         apt-get clean && apt-get update && \
         apt-get install --no-install-recommends -y /tmp/lutris.deb /tmp/heroic.deb && \
         rm -f /tmp/lutris.deb /tmp/heroic.deb && \
-        # Electron's sandbox wants what Chrome's does and a container grants
-        # neither, so the menu entry and the name a shell resolves both pass it
-        sed -i 's|^Exec=/opt/Heroic/heroic|Exec=/opt/Heroic/heroic --no-sandbox|' /usr/share/applications/heroic.desktop && \
-        grep -q -- '^Exec=/opt/Heroic/heroic --no-sandbox' /usr/share/applications/heroic.desktop && \
-        printf '#!/bin/sh\nexec /opt/Heroic/heroic --no-sandbox "$@"\n' > /usr/local/bin/heroic && \
+        # Electron's sandbox wants what Chrome's does, so the menu entry and the
+        # name a shell resolves both start it through a wrapper that asks for
+        # the same namespaces and passes --no-sandbox where they are denied
+        sed -i 's|^Exec=/opt/Heroic/heroic|Exec=/usr/local/bin/heroic|' /usr/share/applications/heroic.desktop && \
+        grep -q '^Exec=/usr/local/bin/heroic' /usr/share/applications/heroic.desktop && \
+        printf '#!/bin/sh\nexec /opt/Heroic/heroic $(unshare --user --map-root-user --pid --net --fork true 2> /dev/null || echo --no-sandbox) "$@"\n' > /usr/local/bin/heroic && \
         chmod -f 755 /usr/local/bin/heroic; \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*

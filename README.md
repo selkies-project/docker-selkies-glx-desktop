@@ -208,7 +208,7 @@ EndSection
 <details markdown>
   <summary>Open Answer</summary>
 
-Give the container more shared memory: `--shm-size=2g`, or the `/dev/shm` memory-backed `emptyDir` `xgl.yml` mounts. Applications that bring their own sandbox (Chrome, Electron, AppImages) cannot set it up inside a container, which grants neither the capabilities Chrome's setuid helper needs nor unprivileged user namespaces: the container is the isolation boundary instead. Chrome's launcher in this image therefore carries `--no-sandbox`, Electron applications need the same switch, and AppImages are extracted rather than FUSE-mounted (`APPIMAGE_EXTRACT_AND_RUN` is set). Do not use `systemd`, Flatpak, or Snap inside the container; they need privileges a container should not have.
+Give the container more shared memory: `--shm-size=2g`, or the `/dev/shm` memory-backed `emptyDir` `xgl.yml` mounts. Applications that bring their own sandbox (Chrome, Electron, AppImages) cannot set it up inside a container that grants neither the capabilities Chrome's setuid helper needs nor unprivileged user namespaces, and Docker's default seccomp profile grants neither: the container is the isolation boundary there. Chrome's launcher and Heroic's in this image ask for those namespaces at every start and pass `--no-sandbox` only where they are denied, other Electron applications need the same switch there, and AppImages are extracted rather than FUSE-mounted (`APPIMAGE_EXTRACT_AND_RUN` is set). Do not use `systemd`, Flatpak, or Snap inside the container; they need privileges a container should not have.
 
 </details>
 
