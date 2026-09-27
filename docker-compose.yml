@@ -51,11 +51,15 @@ services:
     # needs the TURN or host-networking arrangements below
 #    - SELKIES_MODE=webrtc
     # The X server's initial mode, replaced by the client's size once it
-    # connects (dynamic resizing is on by default); SELKIES_MANUAL_WIDTH,
-    # SELKIES_MANUAL_HEIGHT, and the SELKIES_FRAMERATE value win where set
+    # connects (dynamic resizing is on by default); the size a manual resolution
+    # locks the stream to and the frame rate the stream starts at take its place
+    # where set, read as Selkies reads them
     - DISPLAY_SIZEW=1920
     - DISPLAY_SIZEH=1080
     - DISPLAY_REFRESH=60
+#    - SELKIES_MANUAL_WIDTH=1920
+#    - SELKIES_MANUAL_HEIGHT=1080
+#    - SELKIES_FRAMERATE=60
     # NVIDIA GPUs: the video port the driver reports a monitor on (`DFP`, a
     # `DP-*` port, or `none` for a server without RandR outputs); a monitor
     # plugged into that port shows the desktop

@@ -48,14 +48,21 @@ spec:
 #        - name: SELKIES_MODE
 #          value: "webrtc"
         # The X server's initial mode, replaced by the client's size once it
-        # connects (dynamic resizing is on by default); SELKIES_MANUAL_WIDTH,
-        # SELKIES_MANUAL_HEIGHT, and the SELKIES_FRAMERATE value win where set
+        # connects (dynamic resizing is on by default); the size a manual
+        # resolution locks the stream to and the frame rate the stream starts
+        # at take its place where set, read as Selkies reads them
         - name: DISPLAY_SIZEW
           value: "1920"
         - name: DISPLAY_SIZEH
           value: "1080"
         - name: DISPLAY_REFRESH
           value: "60"
+#        - name: SELKIES_MANUAL_WIDTH
+#          value: "1920"
+#        - name: SELKIES_MANUAL_HEIGHT
+#          value: "1080"
+#        - name: SELKIES_FRAMERATE
+#          value: "60"
         # NVIDIA GPUs: the video port the driver reports a monitor on (`DFP`, a
         # `DP-*` port, or `none` for a server without RandR outputs); a monitor
         # plugged into that port shows the desktop

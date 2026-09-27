@@ -111,7 +111,7 @@ Everything Selkies reads is an environment variable named in [`docs/settings.md`
 | --- | --- | --- |
 | `PASSWD` | `mypasswd` | Password of the container's Linux user, and of the web login unless `SELKIES_BASIC_AUTH_PASSWORD` is set |
 | `TZ` | `UTC` | Time zone |
-| `DISPLAY_SIZEW`, `DISPLAY_SIZEH`, `DISPLAY_REFRESH` | `1920`, `1080`, `60` | The X server's initial mode, replaced by the client's size once it connects (dynamic resizing is on by default); `SELKIES_MANUAL_WIDTH`, `SELKIES_MANUAL_HEIGHT`, and the frame rate `SELKIES_FRAMERATE` starts at take their place where set |
+| `DISPLAY_SIZEW`, `DISPLAY_SIZEH`, `DISPLAY_REFRESH` | `1920`, `1080`, `60` | The X server's initial mode, replaced by the client's size once it connects (dynamic resizing is on by default); Selkies' own settings take its place where set, read as Selkies reads them: the size a manual resolution locks the stream to (`SELKIES_MANUAL_WIDTH`, `SELKIES_MANUAL_HEIGHT`, `SELKIES_MANUAL_RESOLUTION`) and the frame rate the stream starts at (`SELKIES_FRAMERATE`) |
 | `VIDEO_PORT` | `DFP` | NVIDIA GPUs: the video port the driver reports a monitor on (`DFP`, a `DP-*` port, or `none` to leave the server without RandR outputs); a monitor plugged into that port shows the desktop |
 | `NVIDIA_DRIVER_VERSION` | (the host's) | The driver installer to take the X server modules from, when the host's version cannot be read |
 | `SELKIES_MODE` | `websockets` | Transport: `websockets` or `webrtc`; both can be switched from the web interface |
