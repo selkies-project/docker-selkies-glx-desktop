@@ -180,6 +180,15 @@ if outputs="$(xrandr --display "${DISPLAY}" --query 2>/dev/null)" \
   echo "[xorg] no output of the ${DRIVER} GPU is connected, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for rendering and encoding and costs only the zero-copy capture path (a monitor or a display emulator plug on the GPU keeps this server)" >&2
   kill "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
+  # The selkies service may already have sized the server just replaced, and
+  # the new one starts at the framebuffer server's own size: once it answers,
+  # the service is restarted, which sizes it the same way.
+  (
+    for _ in $(seq 1 60); do
+      timeout 2 xdpyinfo > /dev/null 2>&1 && exec s6-svc -r /etc/service/selkies
+      sleep 0.5
+    done
+  ) &
   exec /usr/local/bin/selkies-xvfb-server
 fi
 
