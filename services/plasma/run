@@ -54,19 +54,25 @@ fi
 # environment, which this script lacks (startplasma-x11 sets it), and a shell
 # started from here would pass that lack to every application it launches and
 # rebuild the KDE application cache against the session's services without end.
+# The resources are followed with xprop -spy, which prints them once and again
+# at every change, so a change is acted on at once and nothing is polled; a
+# display without Xft.dpi is at Qt's 96. A watcher whose session has ended
+# stands down at the next change instead of replacing the new session's shell.
 (
-  read_dpi() { xrdb -query 2>/dev/null | awk '/^Xft.dpi:/ {print $2}'; }
-  last="$(read_dpi)"
-  while sleep 2; do
-    dpi="$(read_dpi)"
-    if [ -n "${dpi}" ] && [ "${dpi}" != "${last}" ]; then
-      last="${dpi}"
-      if dbus-send --session --print-reply --dest=org.kde.plasmashell /PlasmaShell \
-          org.kde.PlasmaShell.refreshCurrentShell > /dev/null 2>&1; then
-        echo "[plasma] DPI is now ${dpi}; the shell is replacing itself to lay out for it"
-      fi
+  session="$$"
+  last=""
+  while IFS= read -r resources; do
+    kill -0 "${session}" 2>/dev/null || break
+    dpi=96
+    [[ "${resources}" =~ Xft\.dpi:\\t([0-9]+) ]] && dpi="${BASH_REMATCH[1]}"
+    if [ -n "${last}" ] && [ "${dpi}" != "${last}" ] \
+       && dbus-send --session --print-reply --dest=org.kde.plasmashell /PlasmaShell \
+            org.kde.PlasmaShell.refreshCurrentShell > /dev/null 2>&1; then
+      echo "[plasma] DPI is now ${dpi}; the shell is replacing itself to lay out for it"
     fi
-  done
+    last="${dpi}"
+  done < <(xprop -root -spy RESOURCE_MANAGER 2>/dev/null)
+  kill "$!" 2>/dev/null
 ) &
 
 echo "[plasma] session draws on ${DISPLAY}"
