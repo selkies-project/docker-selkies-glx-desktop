@@ -148,9 +148,9 @@ if [ "${DRIVER}" != "nvidia" ]; then
   modeline="$(sed -n 's/^ *Modeline //p' /etc/X11/xorg.conf | head -n 1)"
   mode="$(printf '%s' "${modeline}" | awk '{print $1}' | tr -d '"')"
   lit=""
+  # shellcheck disable=SC2086  # the modeline is a list of numbers
+  xrandr --display "${DISPLAY}" --newmode ${modeline//\"/} > /dev/null 2>&1 || true
   for output in $(xrandr --display "${DISPLAY}" --query | awk '/ connected| disconnected/ {print $1}'); do
-    # shellcheck disable=SC2086  # the modeline is a list of numbers
-    xrandr --display "${DISPLAY}" --newmode ${modeline//\"/} > /dev/null 2>&1 || true
     if xrandr --display "${DISPLAY}" --addmode "${output}" "${mode}" > /dev/null 2>&1 \
        && xrandr --display "${DISPLAY}" --output "${output}" --primary --mode "${mode}" > /dev/null 2>&1; then
       lit="${output}"
