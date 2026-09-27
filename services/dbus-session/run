@@ -11,4 +11,6 @@
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-ubuntu}"
 mkdir -p "${XDG_RUNTIME_DIR}"
 chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+# What the bus activates starts in its directory: the home, not this service's.
+cd "${HOME}" || true
 exec dbus-daemon --session --nofork --nosyslog --nopidfile --address="unix:path=${XDG_RUNTIME_DIR}/selkies-session-bus"
