@@ -276,8 +276,11 @@ card="$(ls -d /sys/bus/pci/devices/${pci}/drm/card* 2>/dev/null | head -n 1)"
 [ -n "${card}" ] && [ -e "/dev/dri/$(basename "${card}")" ] && card_node="/dev/dri/$(basename "${card}")"
 printf '%s' "${card_node}" > "${XDG_RUNTIME_DIR}/xorg-card"
 
-# A modeline for the configured size: no monitor answers with one here
-modeline="$(cvt -r "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" | sed -n '2p')"
+# A modeline for the configured size: no monitor answers with one here.
+# Reduced blanking is defined only at multiples of 60 Hz, which cvt enforces,
+# so any other rate takes the standard blanking.
+modeline="$(cvt -r "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" 2>/dev/null | sed -n '2p')"
+[ -n "${modeline}" ] || modeline="$(cvt "${DISPLAY_SIZEW}" "${DISPLAY_SIZEH}" "${DISPLAY_REFRESH}" | sed -n '2p')"
 mode="$(printf '%s' "${modeline}" | awk '{print $2}' | tr -d '"')"
 
 # The screen is 24 bits deep on either driver: Selkies captures and encodes
