@@ -48,6 +48,10 @@ fi
 # fraction of the screen and the panels keep their old pixel geometry. A DPI
 # the client sets is stamped into the X resources, so the shell is replaced
 # when that value changes and lays out afresh; windows stay where they are.
+# The shell is asked to replace itself: its own child keeps the session's
+# environment, which this script lacks (startplasma-x11 sets it), and a shell
+# started from here would pass that lack to every application it launches and
+# rebuild the KDE application cache against the session's services without end.
 (
   read_dpi() { xrdb -query 2>/dev/null | awk '/^Xft.dpi:/ {print $2}'; }
   last="$(read_dpi)"
@@ -55,9 +59,9 @@ fi
     dpi="$(read_dpi)"
     if [ -n "${dpi}" ] && [ "${dpi}" != "${last}" ]; then
       last="${dpi}"
-      if pgrep -x plasmashell > /dev/null 2>&1; then
-        echo "[plasma] DPI is now ${dpi}; replacing the shell so it lays out for it"
-        plasmashell --replace > /dev/null 2>&1 &
+      if dbus-send --session --print-reply --dest=org.kde.plasmashell /PlasmaShell \
+          org.kde.PlasmaShell.refreshCurrentShell > /dev/null 2>&1; then
+        echo "[plasma] DPI is now ${dpi}; the shell is replacing itself to lay out for it"
       fi
     fi
   done
