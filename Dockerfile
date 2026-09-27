@@ -153,16 +153,20 @@ RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -
     rm -f /usr/lib/*/qt6/plugins/kf6/kded/devicenotifications.so && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
-# Session defaults in the system scope, so a user's own settings still win:
-# no splash on a streamed desktop, no lock screen (a locked container session
-# has no local seat to unlock it), and no leave actions (logging out ends the
-# session the stream is showing, and shutdown addresses an init this container
-# does not run), no compositing (every animation is bandwidth for nothing), and
-# no file indexing of a container home.
+# Session defaults in the system scope, so a user's own settings still win: no
+# splash on a streamed desktop, no lock screen (a locked container session has
+# no local seat to unlock it), no leave actions (logging out ends the session
+# the stream is showing, and shutdown addresses an init this container does not
+# run), no compositing (every animation is bandwidth for nothing), no file
+# indexing of a container home, and Firefox as the web browser: kdeglobals names
+# it to KDE, and the MIME defaults name it to everything that resolves one from
+# them (the task manager's browser launcher, xdg-open), where Chrome's hidden
+# alias entry would otherwise win by sorting first.
 RUN mkdir -pm755 /etc/xdg && \
     printf '[KSplash]\nEngine=none\n' > /etc/xdg/ksplashrc && \
     printf '[Daemon]\nAutolock=false\nLockOnResume=false\n' > /etc/xdg/kscreenlockerrc && \
     printf '[KDE Action Restrictions]\naction/lock_screen=false\naction/switch_user=false\nlogout=false\n\n[General]\nBrowserApplication=firefox.desktop\n' > /etc/xdg/kdeglobals && \
+    printf '[Default Applications]\ntext/html=firefox.desktop\nx-scheme-handler/http=firefox.desktop\nx-scheme-handler/https=firefox.desktop\n' > /etc/xdg/mimeapps.list && \
     printf '[Compositing]\nEnabled=false\n' > /etc/xdg/kwinrc && \
     printf '[Basic Settings]\nIndexing-Enabled=false\n' > /etc/xdg/baloofilerc && \
     # Plasma's device notifier and Dolphin's places poll UDisks2, which the
