@@ -236,14 +236,15 @@ RUN mkdir -pm755 /opt/proot-apps && \
 # "Steam now requires user namespaces to be enabled". proot-bwrap takes the
 # place pressure-vessel reads from $BWRAP when its own bubblewrap fails and
 # builds those containers through fakechroot, or where its library cannot be
-# preloaded through a proot the installer builds: every released one leaves its
-# own loader named in AT_EXECFN, which this image's multi-call coreutils read
-# to decide which tool they are. The Steam Linux Runtime is used exactly as
-# Valve ships it, so native Linux games get the libraries they were built
-# against and Proton runs through the runtime it asks for. The installer brings
-# Steam itself, the 32-bit libraries its client and games need, and the wiring
-# into Steam's own launcher, so every way of starting it carries the stand-in.
-# The Steam client is x86 only and is left out of every other architecture.
+# preloaded through the proot the installer builds, PRoot 5.5.0: every earlier
+# release leaves its own loader named in AT_EXECFN, which this image's
+# multi-call coreutils read to decide which tool they are. The Steam Linux
+# Runtime is used exactly as Valve ships it, so native Linux games get the
+# libraries they were built against and Proton runs through the runtime it asks
+# for. The installer brings Steam itself, the 32-bit libraries its client and
+# games need, and the wiring into Steam's own launcher, so every way of
+# starting it carries the stand-in. The Steam client is x86 only and is left
+# out of every other architecture.
 RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         curl -o /tmp/proot-bwrap-install.sh -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
             "https://raw.githubusercontent.com/selkies-project/proot-bwrap/${PROOT_BWRAP_REF}/install.sh" && \
