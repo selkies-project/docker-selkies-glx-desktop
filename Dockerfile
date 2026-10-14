@@ -82,7 +82,20 @@ RUN if ! command -v selkies-privileged-files > /dev/null; then \
             "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/base/selkies-privileged-files" && \
         chown 1000:1000 /usr/local/bin/selkies-privileged-files && chmod 755 /usr/local/bin/selkies-privileged-files; \
     fi && \
-    selkies-privileged-files release
+    selkies-privileged-files release && \
+    # ucf and ucfr through fakeroot, which a base from before selkies' ucf-fakeroot lacks:
+    # under it they install none of the configuration files they manage, LibreOffice's
+    # registry among them, and LibreOffice aborts at start
+    if [ ! -e /usr/local/bin/ucf-fakeroot ]; then \
+        curl -o /usr/local/bin/ucf-fakeroot -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 \
+            "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/base/ucf-fakeroot" && \
+        chown 1000:1000 /usr/local/bin/ucf-fakeroot && chmod 755 /usr/local/bin/ucf-fakeroot && \
+        for tool in ucf ucfr; do \
+            dpkg-divert --quiet --local --rename --add "/usr/bin/${tool}" && \
+            ln -snf /usr/local/bin/ucf-fakeroot "/usr/bin/${tool}" || exit 1; \
+        done && \
+        chown -h 1000:1000 /usr/bin/ucf /usr/bin/ucfr /var/lib/dpkg/diversions*; \
+    fi
 
 # Rootless like the base: layers run as the session user through fakeroot, so
 # the package database and apt cache stay owned by that user and in-session
