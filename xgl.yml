@@ -33,11 +33,11 @@ spec:
         # SELKIES_BASIC_AUTH_PASSWORD is not set; choose either `value:` or
         # `secretKeyRef:` but not both
         - name: PASSWD
-          value: "mypasswd"
-#          valueFrom:
-#            secretKeyRef:
-#              name: my-pass
-#              key: my-pass
+          valueFrom:
+            secretKeyRef:
+              name: my-pass
+              key: my-pass
+#          value: "mypasswd"
         ###
         # Selkies settings, `selkies --help` and
         # https://github.com/selkies-project/selkies/blob/main/docs/settings.md
