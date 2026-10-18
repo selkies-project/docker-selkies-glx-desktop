@@ -22,15 +22,27 @@ on:
     paths-ignore:
       - README.md
       - LICENSE
+      # Deployment examples, which the image does not carry
+      - docker-compose.yml
+      - xgl.yml
   pull_request:
     branches: [ main ]
     paths-ignore:
       - README.md
       - LICENSE
+      # Deployment examples, which the image does not carry
+      - docker-compose.yml
+      - xgl.yml
 
 permissions:
   contents: read
   packages: write
+
+# A push supersedes the build of the one before it on the same branch, which
+# would publish an image the newer one replaces anyway
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -76,6 +88,20 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the kwin source versions the archive serves
+        id: kwin
+        env:
+          DISTRIB_RELEASE: ${{ env.DISTRIB_RELEASE }}
+        # The rebuilt kwin stages are cached by these, so a new archive version
+        # rebuilds them where the cache would hand back the last one's packages
+        run: |
+          docker run --rm "ubuntu:${DISTRIB_RELEASE}" bash -c '
+            sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/ubuntu.sources
+            apt-get update -qq
+            for package in kwin-x11; do
+              version="$(apt-get source --print-uris "${package}" | sed -n "s|.* ${package}_\(.*\)\.dsc .*|\1|p")"
+              echo "${package//-/_}=${version}"
+            done' | tee -a "$GITHUB_OUTPUT"
       - name: Build and push by digest
         id: first
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -85,9 +111,12 @@ jobs:
           platforms: ${{ matrix.arch.platform }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
+            KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
-          cache-from: type=gha,scope=${{ matrix.arch.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}
+          # In the registry, which keeps it whole: the Actions cache's 10 GB held
+          # the kwin rebuild's layers only until the desktop's evicted them
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch.name }}
+          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY, env.IMAGE_NAME, matrix.arch.name) || '' }}
       - name: Wait for the registry
         if: ${{ steps.first.outcome == 'failure' }}
         run: sleep "${PUSH_RETRY_DELAY}"
@@ -100,9 +129,12 @@ jobs:
           platforms: ${{ matrix.arch.platform }}
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
+            KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
-          cache-from: type=gha,scope=${{ matrix.arch.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch.name }}
+          # In the registry, which keeps it whole: the Actions cache's 10 GB held
+          # the kwin rebuild's layers only until the desktop's evicted them
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch.name }}
+          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY, env.IMAGE_NAME, matrix.arch.name) || '' }}
       - name: Export the digest
         if: ${{ github.ref == 'refs/heads/main' }}
         env:
