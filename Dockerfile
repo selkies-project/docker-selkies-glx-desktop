@@ -78,12 +78,15 @@ ARG PROOT_BWRAP_REF
 # archive update to util-linux, shadow, sudo, fuse3, or dbus is just another
 # package; without this it fails the layer that takes it. The helper is the
 # base's own; a base published before it carried one is given the copy the
-# Selkies repository ships.
+# Selkies repository ships. Every download below is checked against the hash its
+# source publishes for it (fetch-verified, with the build's token as the secret
+# github_token where one is given).
 USER 0
 SHELL ["/bin/sh", "-c"]
-RUN if ! command -v selkies-privileged-files > /dev/null; then \
-        curl -o /usr/local/bin/selkies-privileged-files -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/base/selkies-privileged-files" && \
+COPY --chmod=755 fetch-verified /usr/local/bin/fetch-verified
+RUN --mount=type=secret,id=github_token if ! command -v selkies-privileged-files > /dev/null; then \
+        fetch-verified file selkies-project/selkies "${SELKIES_REF}" \
+            addons/base/selkies-privileged-files /usr/local/bin/selkies-privileged-files && \
         chown 1000:1000 /usr/local/bin/selkies-privileged-files && chmod 755 /usr/local/bin/selkies-privileged-files; \
     fi && \
     selkies-privileged-files release && \
@@ -91,8 +94,8 @@ RUN if ! command -v selkies-privileged-files > /dev/null; then \
     # under it they install none of the configuration files they manage, LibreOffice's
     # registry among them, and LibreOffice aborts at start
     if [ ! -e /usr/local/bin/ucf-fakeroot ]; then \
-        curl -o /usr/local/bin/ucf-fakeroot -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/base/ucf-fakeroot" && \
+        fetch-verified file selkies-project/selkies "${SELKIES_REF}" \
+            addons/base/ucf-fakeroot /usr/local/bin/ucf-fakeroot && \
         chown 1000:1000 /usr/local/bin/ucf-fakeroot && chmod 755 /usr/local/bin/ucf-fakeroot && \
         for tool in ucf ucfr; do \
             dpkg-divert --quiet --local --rename --add "/usr/bin/${tool}" && \
@@ -205,16 +208,23 @@ RUN mkdir -pm755 /etc/xdg && \
 # keeps the sandbox wherever they are granted, as under an unconfined seccomp
 # profile. And the basic password store, because the container runs no keyring
 # daemon to unlock and Chrome otherwise blocks on a prompt nobody can answer.
-# The downloads retry every failure and the Chrome one is held to HTTP/1.1,
-# since its server resets HTTP/2 streams mid-transfer often enough to fail a
-# build.
+# Both come from their vendors' apt repositories, whose packages apt checks
+# against the signing key each names; the keys are checked against the
+# fingerprints Mozilla and Google publish. Chrome's package rewrites
+# google-chrome.sources to trust a key it carries itself, and writes one on a
+# first install; the entry here is named apart from it and the package's
+# defaults file keeps it from writing its own.
 RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d && \
-    curl -o /etc/apt/keyrings/packages.mozilla.org.asc -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 "https://packages.mozilla.org/apt/repo-signing-key.gpg" && \
+    fetch-verified key "https://packages.mozilla.org/apt/repo-signing-key.gpg" \
+        35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3 /etc/apt/keyrings/packages.mozilla.org.asc && \
     printf 'Types: deb\nURIs: https://packages.mozilla.org/apt\nSuites: mozilla\nComponents: main\nSigned-By: /etc/apt/keyrings/packages.mozilla.org.asc\n' > /etc/apt/sources.list.d/mozilla.sources && \
     printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' > /etc/apt/preferences.d/mozilla && \
-    curl -o /tmp/google-chrome-stable.deb -fsSL --http1.1 --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb" && \
+    fetch-verified key "https://dl.google.com/linux/linux_signing_key.pub" \
+        EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796 /etc/apt/keyrings/google-chrome.asc && \
+    printf 'Types: deb\nURIs: https://dl.google.com/linux/chrome/deb/\nSuites: stable\nComponents: main\nSigned-By: /etc/apt/keyrings/google-chrome.asc\n' > /etc/apt/sources.list.d/google-linux.sources && \
+    printf 'repo_add_once="false"\nrepo_reenable_on_distupgrade="false"\n' > /etc/default/google-chrome && \
     apt-get clean && apt-get update && \
-    apt-get install --no-install-recommends -y firefox /tmp/google-chrome-stable.deb && \
+    apt-get install --no-install-recommends -y firefox google-chrome-stable && \
     sed -i 's#^exec -a "$0" "$HERE/chrome" "$@"$#exec -a "$0" "$HERE/chrome" $(unshare --user --map-root-user --pid --net --fork true 2> /dev/null || echo --no-sandbox) --password-store=basic "$@"#' /opt/google/chrome/google-chrome && \
     grep -q -- '|| echo --no-sandbox) --password-store=basic "$@"' /opt/google/chrome/google-chrome && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
@@ -229,11 +239,11 @@ RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.
 # capability the container's bounding set does not hold stops that binary from
 # execing at all, and the wrapper picks whichever of the two runs. The wrapper
 # is the one the Selkies desktop container ships, taken from the same revision
-# as the base.
-RUN mkdir -pm755 /opt/proot-apps && \
-    PAPPS_RELEASE="$(curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 -o /dev/null -w '%{url_effective}' "https://github.com/linuxserver/proot-apps/releases/latest" | sed 's|.*/||')" && \
-    curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 "https://github.com/linuxserver/proot-apps/releases/download/${PAPPS_RELEASE}/proot-apps-$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/').tar.gz" \
-        | tar -xzf - -C /opt/proot-apps/ && \
+# as the base. The token is mounted for uid 1000, which these layers run as.
+RUN --mount=type=secret,id=github_token,uid=1000 mkdir -pm755 /opt/proot-apps && \
+    PAPPS_RELEASE="$(fetch-verified release linuxserver/proot-apps latest \
+        "proot-apps-$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/').tar.gz" /tmp/proot-apps.tar.gz)" && \
+    tar -xzf /tmp/proot-apps.tar.gz -C /opt/proot-apps/ && rm -f /tmp/proot-apps.tar.gz && \
     printf '%s\n' "${PAPPS_RELEASE}" > /opt/proot-apps/pversion && \
     if ! command -v setcap > /dev/null; then \
         apt-get update && apt-get install --no-install-recommends -y libcap2-bin && \
@@ -241,8 +251,7 @@ RUN mkdir -pm755 /opt/proot-apps && \
     fi && \
     mkdir -pm755 /opt/proot-apps-cap && \
     cp /opt/proot-apps/proot /opt/proot-apps-cap/proot && \
-    curl -o /usr/local/bin/selkies-proot -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-        "https://raw.githubusercontent.com/selkies-project/selkies/${SELKIES_REF}/addons/desktop/selkies-proot" && \
+    fetch-verified file selkies-project/selkies "${SELKIES_REF}" addons/desktop/selkies-proot /usr/local/bin/selkies-proot && \
     chmod -f 755 /usr/local/bin/selkies-proot
 
 # Steam, and the games it launches, in a container without user namespaces.
@@ -262,9 +271,8 @@ RUN mkdir -pm755 /opt/proot-apps && \
 # games need, and the wiring into Steam's own launcher, so every way of
 # starting it carries the stand-in. The Steam client is x86 only and is left
 # out of every other architecture.
-RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        curl -o /tmp/proot-bwrap-install.sh -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://raw.githubusercontent.com/selkies-project/proot-bwrap/${PROOT_BWRAP_REF}/install.sh" && \
+RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        fetch-verified file selkies-project/proot-bwrap "${PROOT_BWRAP_REF}" install.sh /tmp/proot-bwrap-install.sh && \
         PROOT_BWRAP_REF="${PROOT_BWRAP_REF}" sh /tmp/proot-bwrap-install.sh; \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
@@ -275,42 +283,36 @@ RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
 # compatibility reports assume; the repository publishes per Ubuntu codename,
 # so the codename is read from the image rather than pinned. Wine is x86 and
 # needs the 32-bit runtime for anything older than 64-bit Windows, so this is
-# amd64 only. Winetricks comes from its own repository, where it is released
-# continuously and the packaged copy is always behind.
-RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+# amd64 only. WineHQ's key is checked against its fingerprint, and the entry
+# is written here as WineHQ publishes it for the codename. Winetricks comes
+# from its own repository, where it is released continuously and the packaged
+# copy is always behind: its newest commit, each file checked against the hash
+# GitHub names for it there.
+RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         dpkg --add-architecture i386 && \
         mkdir -pm755 /etc/apt/keyrings && \
-        curl -o /etc/apt/keyrings/winehq-archive.asc -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://dl.winehq.org/wine-builds/winehq.key" && \
+        fetch-verified key "https://dl.winehq.org/wine-builds/winehq.key" \
+            D43F640145369C51D786DDEA76F1A20FF987672F /etc/apt/keyrings/winehq-archive.asc && \
         codename="$(grep '^VERSION_CODENAME=' /etc/os-release | cut -d= -f2 | tr -d '\"')" && \
-        curl -o "/etc/apt/sources.list.d/winehq-${codename}.sources" -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://dl.winehq.org/wine-builds/ubuntu/dists/${codename}/winehq-${codename}.sources" && \
-        # apt reads a keyring only from a name that says how it is encoded, and
-        # the file WineHQ's own instructions name says neither
-        sed -i 's|^Signed-By:.*|Signed-By: /etc/apt/keyrings/winehq-archive.asc|' "/etc/apt/sources.list.d/winehq-${codename}.sources" && \
+        printf 'Types: deb\nURIs: https://dl.winehq.org/wine-builds/ubuntu\nSuites: %s\nComponents: main\nArchitectures: amd64 i386\nSigned-By: /etc/apt/keyrings/winehq-archive.asc\n' \
+            "${codename}" > "/etc/apt/sources.list.d/winehq-${codename}.sources" && \
         apt-get clean && apt-get update && \
         apt-get install --install-recommends -y winehq-staging && \
-        curl -o /usr/bin/winetricks -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" && \
-        chmod -f 755 /usr/bin/winetricks && \
-        curl -o /usr/share/bash-completion/completions/winetricks -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks.bash-completion"; \
+        fetch-verified file Winetricks/winetricks master src/winetricks /usr/bin/winetricks \
+            src/winetricks.bash-completion /usr/share/bash-completion/completions/winetricks && \
+        chmod -f 755 /usr/bin/winetricks; \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
 # The launchers that stand beside Steam: Lutris for its own runners and Wine,
 # Heroic for the Epic and GOG libraries. Neither is in the archive, so the
-# newest release is read from GitHub at build time. x86 only, as Steam and Wine
-# are; Heroic publishes no Linux package for another architecture.
-RUN if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        LUTRIS_VERSION="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://api.github.com/repos/lutris/lutris/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')" && \
-        curl -o /tmp/lutris.deb -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://github.com/lutris/lutris/releases/download/v${LUTRIS_VERSION}/lutris_${LUTRIS_VERSION}_all.deb" && \
-        HEROIC_VERSION="$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')" && \
-        curl -o /tmp/heroic.deb -fsSL --retry 5 --retry-all-errors --retry-delay 3 --retry-connrefused --retry-max-time 180 \
-            "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v${HEROIC_VERSION}/Heroic-${HEROIC_VERSION}-linux-$(dpkg --print-architecture).deb" && \
+# newest release is read from GitHub at build time and checked against the
+# digest GitHub records for it. x86 only, as Steam and Wine are; Heroic
+# publishes no Linux package for another architecture.
+RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        fetch-verified release lutris/lutris latest 'lutris_{version}_all.deb' /tmp/lutris.deb && \
+        fetch-verified release Heroic-Games-Launcher/HeroicGamesLauncher latest \
+            "Heroic-{version}-linux-$(dpkg --print-architecture).deb" /tmp/heroic.deb && \
         apt-get clean && apt-get update && \
         apt-get install --no-install-recommends -y /tmp/lutris.deb /tmp/heroic.deb && \
         rm -f /tmp/lutris.deb /tmp/heroic.deb && \
