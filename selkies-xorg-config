@@ -111,6 +111,34 @@ driver_version() {
   printf '%s' "${version}"
 }
 
+# The installer checked against the SHA-256 NVIDIA publishes beside it on the
+# consumer path, which a version published on both paths shares with the
+# datacenter one (the same bytes). The version follows the host's driver, so the
+# sum is fetched with it rather than kept here. NVIDIA publishes none for a
+# version on the datacenter path alone, nor for every aarch64 release: such an
+# installer goes on with only TLS behind it, said in the log; any other failure
+# to read the sum, or a sum that does not match, stops the install.
+verify_installer() {
+  local dir="$1" archive="$2" arch="$3" version="$4" code expected actual
+  code="$(curl -sSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 120 -o "${dir}/${archive}.sha256sum" \
+    -w '%{http_code}' "https://international.download.nvidia.com/XFree86/Linux-${arch}/${version}/${archive}.sha256sum")" || code=""
+  if [ "${code}" = "404" ]; then
+    log "NVIDIA publishes no SHA-256 for driver ${version} on ${arch}; its installer is not verified"
+    return 0
+  fi
+  expected="$(awk 'NR == 1 {print $1}' "${dir}/${archive}.sha256sum" 2>/dev/null)"
+  if [ "${code}" != "200" ] || ! printf '%s' "${expected}" | grep -qxE '[0-9a-f]{64}'; then
+    log "the SHA-256 of NVIDIA driver ${version} cannot be read (HTTP ${code:-none}); not installing it"
+    return 1
+  fi
+  actual="$(sha256sum "${dir}/${archive}" | awk '{print $1}')"
+  if [ "${actual}" != "${expected}" ]; then
+    log "NVIDIA driver ${version} does not match the SHA-256 NVIDIA publishes for it; not installing it"
+    return 1
+  fi
+  log "NVIDIA driver ${version} matches its published SHA-256"
+}
+
 # The driver's own installer, fetched and unpacked once into INSTALLER_TREE:
 # the X server modules and the 32-bit client libraries are shipped there and
 # nowhere else. A global rather than a printed path, so both callers share one
@@ -123,13 +151,17 @@ prepare_installer_tree() {
   archive="NVIDIA-Linux-${arch}-${version}.run"
   extracted="$(mktemp -d "${TMPDIR:-/tmp}/nvidia-driver.XXXXXX")"
   log "fetching NVIDIA driver ${version}"
-  # Consumer and datacenter drivers are published under different paths; a
-  # version exists under exactly one of them
+  # Consumer and datacenter drivers are published under different paths, a
+  # version under one of them or both
   if ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
          "https://international.download.nvidia.com/XFree86/Linux-${arch}/${version}/${archive}" \
      && ! curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --retry-max-time 900 -o "${extracted}/${archive}" \
          "https://international.download.nvidia.com/tesla/${version}/${archive}"; then
     log "NVIDIA driver ${version} cannot be downloaded; set NVIDIA_DRIVER_VERSION to a published one"
+    rm -rf "${extracted}"
+    return 1
+  fi
+  if ! verify_installer "${extracted}" "${archive}" "${arch}" "${version}"; then
     rm -rf "${extracted}"
     return 1
   fi
