@@ -29,8 +29,9 @@ ARG DISTRIB_IMAGE="ubuntu"
 ARG DISTRIB_RELEASE="26.04"
 # The Selkies revision the shared helper scripts are taken from
 ARG SELKIES_REF="main"
-# The proot-bwrap revision Steam's bubblewrap stand-in is installed from
-ARG PROOT_BWRAP_REF="main"
+# The proot-next revision Steam's installer is taken from; it installs the latest
+# proot-next release as Steam's bubblewrap stand-in
+ARG PROOT_NEXT_REF="main"
 
 # The X11 window manager, rebuilt from the archive with a patch: stock kwin_x11
 # makes one screen per CRTC and spans the displays Selkies publishes as RandR
@@ -70,7 +71,7 @@ LABEL org.opencontainers.image.licenses="MPL-2.0"
 
 ARG DEBIAN_FRONTEND="noninteractive"
 ARG SELKIES_REF
-ARG PROOT_BWRAP_REF
+ARG PROOT_NEXT_REF
 
 # The base ships its setuid and setgid files owned by root, and dpkg replaces a
 # file by hardlinking the old one aside first -- which the kernel denies uid
@@ -259,12 +260,10 @@ RUN --mount=type=secret,id=github_token,uid=1000 mkdir -pm755 /opt/proot-apps &&
 # through pressure-vessel, which builds a container with bubblewrap; bubblewrap
 # needs a user namespace or CAP_SYS_ADMIN and a container's seccomp profile
 # grants neither, so a stock Steam stops at its own requirements check with
-# "Steam now requires user namespaces to be enabled". proot-bwrap takes the
-# place pressure-vessel reads from $BWRAP when its own bubblewrap fails and
-# builds those containers through fakechroot, or where its library cannot be
-# preloaded through the proot the installer builds, PRoot 5.5.0: every earlier
-# release leaves its own loader named in AT_EXECFN, which this image's
-# multi-call coreutils read to decide which tool they are. The Steam Linux
+# "Steam now requires user namespaces to be enabled". proot-next, under the
+# bwrap name, takes the place pressure-vessel reads from $BWRAP when its own
+# bubblewrap fails, and builds those containers by path translation without a
+# namespace, the client's browser helper included. The Steam Linux
 # Runtime is used exactly as Valve ships it, so native Linux games get the
 # libraries they were built against and Proton runs through the runtime it asks
 # for. The installer brings Steam itself, the 32-bit libraries its client and
@@ -272,8 +271,8 @@ RUN --mount=type=secret,id=github_token,uid=1000 mkdir -pm755 /opt/proot-apps &&
 # starting it carries the stand-in. The Steam client is x86 only and is left
 # out of every other architecture.
 RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        fetch-verified file selkies-project/proot-bwrap "${PROOT_BWRAP_REF}" install.sh /tmp/proot-bwrap-install.sh && \
-        PROOT_BWRAP_REF="${PROOT_BWRAP_REF}" sh /tmp/proot-bwrap-install.sh; \
+        fetch-verified file selkies-project/proot-next "${PROOT_NEXT_REF}" install-steam.sh /tmp/install-steam.sh && \
+        sh /tmp/install-steam.sh; \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
