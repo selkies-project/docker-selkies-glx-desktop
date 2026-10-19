@@ -130,6 +130,13 @@ jobs:
               version="$(apt-get source --print-uris "${package}" | sed -n "s|.* ${package}_\(.*\)\.dsc .*|\1|p")"
               echo "${package//-/_}=${version}"
             done' | tee -a "$GITHUB_OUTPUT"
+      - name: Read the proot-next release Steam's stand-in comes from
+        id: proot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The Steam layer is cached by it, so a new release rebuilds that layer
+        # where the cache would hand back the last one's binary
+        run: echo "version=$(gh api repos/selkies-project/proot-next/releases/latest --jq .tag_name)" | tee -a "$GITHUB_OUTPUT"
       - name: Build and push by digest
         id: first
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -140,6 +147,7 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
+            PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}
@@ -160,6 +168,7 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
+            PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}

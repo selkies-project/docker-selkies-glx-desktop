@@ -270,9 +270,14 @@ RUN --mount=type=secret,id=github_token,uid=1000 mkdir -pm755 /opt/proot-apps &&
 # games need, and the wiring into Steam's own launcher, so every way of
 # starting it carries the stand-in. The Steam client is x86 only and is left
 # out of every other architecture.
+# The proot-next release the installer takes, which CI reads before the build:
+# a new one rebuilds this layer where a build cache would hand back the last
+# one's binary. Empty takes the latest. Declared here so that a new release
+# leaves the layers above cached.
+ARG PROOT_NEXT_VERSION=""
 RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         fetch-verified file selkies-project/proot-next "${PROOT_NEXT_REF}" install-steam.sh /tmp/install-steam.sh && \
-        sh /tmp/install-steam.sh; \
+        PROOT_NEXT_VERSION="${PROOT_NEXT_VERSION}" sh /tmp/install-steam.sh; \
     fi && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/log/* /tmp/* /var/tmp/*
 
