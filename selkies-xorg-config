@@ -10,7 +10,7 @@
 # non-zero, with the reason on stderr, when no GPU can carry an X server.
 #
 # The GPU is the one the base container resolved for the session
-# (selkies-gpu-probe: --render-dri, else the --auto-gpu pick), read back from
+# (selkies gpu-probe: --render-dri, else the --auto-gpu pick), read back from
 # the render node it reported; an NVIDIA GPU exposed without a DRM node is
 # found through the driver's own /proc tree. Every vendor with a KMS driver
 # takes the modesetting driver, which is how AMD and Intel GPUs run X.Org
