@@ -1,6 +1,6 @@
 <h1 align="center">docker-selkies-glx-desktop</h1>
 
-<p align="center">Part of <a href="https://www.linuxserver.io"><img src="https://raw.githubusercontent.com/selkies-project/docker-selkies-glx-desktop/main/assets/linuxserver.svg" alt="LinuxServer.io" title="LinuxServer.io" width="200" align="middle"></a></p>
+<p align="center">Part of <a href="https://www.linuxserver.io"><img src="https://raw.githubusercontent.com/selkies-project/docker-selkies-glx-desktop/main/assets/linuxserver.svg" alt="LinuxServer.io" title="LinuxServer.io" width="182" align="middle"></a></p>
 
 KDE Plasma desktop container for [Selkies](https://github.com/selkies-project/selkies) on an X.Org server of its own, built on the [Selkies base container](https://github.com/selkies-project/selkies/tree/main/addons/base): a complete remote desktop streamed over WebSockets or WebRTC to a browser, with the GPU driving the whole X server. OpenGL and Vulkan reach applications through the vendor's own X driver, with nothing translating in between: the proprietary NVIDIA driver, or the modesetting driver on any GPU with a kernel KMS driver (AMD, Intel). The X server is the container's own, so no `/tmp/.X11-unix` host socket or host X configuration is involved, and one GPU carries one container.
 
