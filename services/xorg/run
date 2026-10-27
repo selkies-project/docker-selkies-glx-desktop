@@ -169,15 +169,18 @@ fi
 # and the desktop is a black stream, even where a mode lights a disconnected
 # output. Most datacenter GPUs carry virtual display devices for the configured
 # video port to light and never reach this; a board that reports no display
-# device at all, a KMS GPU with nothing plugged in, and `VIDEO_PORT=none` do.
-# The framebuffer server of the base container runs the same session on an
-# output of its own and keeps the GPU: its glamor draws on the render node and
-# the entrypoint routes GLX to the vendor's own client library through DRI3, so
-# what moving there costs is the capture path, which grabs through shared
-# memory rather than reading the screen where the driver composited it.
+# device at all (a Tesla K80), a KMS GPU with nothing plugged in, and
+# `VIDEO_PORT=none` do. The framebuffer server of the base container runs the
+# same session on an output of its own and keeps the GPU: its glamor draws on
+# the render node and the entrypoint routes GLX to the vendor's own client
+# library through DRI3, so what moving there costs is the capture path, which
+# grabs through shared memory rather than reading the screen where the driver
+# composited it. A driver without a GBM backend (NVIDIA before 495) gives glamor
+# nothing to draw on, and the session then renders in software and only encodes
+# on the GPU.
 if outputs="$(xrandr --display "${DISPLAY}" --query 2>/dev/null)" \
    && [ "$(printf '%s\n' "${outputs}" | grep -c ' connected')" = "0" ]; then
-  echo "[xorg] no output of the ${DRIVER} GPU is connected, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for rendering and encoding and costs only the zero-copy capture path (a monitor or a display emulator plug on the GPU keeps this server)" >&2
+  echo "[xorg] no output of the ${DRIVER} GPU is connected, which leaves the session with no screen to lay out on; running the framebuffer server instead, which keeps the GPU for encoding, and for rendering where its driver allocates through GBM (NVIDIA from 495), and costs the zero-copy capture path (a monitor or a display emulator plug on the GPU keeps this server)" >&2
   kill "${XORG_PID}" 2>/dev/null
   wait "${XORG_PID}" 2>/dev/null
   # The selkies service may already have sized the server just replaced, and
