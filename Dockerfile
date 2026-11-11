@@ -244,8 +244,13 @@ RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.
 # copy that runs. The wrapper is the one the Selkies desktop container ships,
 # taken from the same revision as the base. The token is mounted for uid 1000,
 # which these layers run as.
+# The proot-apps release this layer takes, which CI reads before the build: a
+# new one rebuilds this layer, and the wrapper with it, where a build cache would
+# hand back the last one's tools. Empty takes the latest. Declared here so that
+# a new release leaves the layers above cached.
+ARG PROOT_APPS_VERSION=""
 RUN --mount=type=secret,id=github_token,uid=1000 mkdir -pm755 /opt/proot-apps && \
-    PAPPS_RELEASE="$(fetch-verified release linuxserver/proot-apps latest \
+    PAPPS_RELEASE="$(fetch-verified release linuxserver/proot-apps "${PROOT_APPS_VERSION:-latest}" \
         "proot-apps-$(dpkg --print-architecture | sed 's/amd64/x86_64/;s/arm64/aarch64/').tar.gz" /tmp/proot-apps.tar.gz)" && \
     tar -xzf /tmp/proot-apps.tar.gz -C /opt/proot-apps/ && rm -f /tmp/proot-apps.tar.gz && \
     printf '%s\n' "${PAPPS_RELEASE}" > /opt/proot-apps/pversion && \

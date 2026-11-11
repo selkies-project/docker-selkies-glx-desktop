@@ -137,6 +137,13 @@ jobs:
         # The Steam layer is cached by it, so a new release rebuilds that layer
         # where the cache would hand back the last one's binary
         run: echo "version=$(gh api repos/selkies-project/proot-next/releases/latest --jq .tag_name)" | tee -a "$GITHUB_OUTPUT"
+      - name: Read the proot-apps release the apps panel's runner comes from
+        id: papps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The proot-apps layer is cached by it, so a new release rebuilds that
+        # layer where the cache would hand back the last one's tools
+        run: echo "version=$(gh api repos/linuxserver/proot-apps/releases/latest --jq .tag_name)" | tee -a "$GITHUB_OUTPUT"
       - name: Build and push by digest
         id: first
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -148,6 +155,7 @@ jobs:
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
             PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
+            PROOT_APPS_VERSION=${{ steps.papps.outputs.version }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}
@@ -169,6 +177,7 @@ jobs:
             BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ inputs.base_tag || 'latest-ubuntu26.04' }}
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
             PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
+            PROOT_APPS_VERSION=${{ steps.papps.outputs.version }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}
