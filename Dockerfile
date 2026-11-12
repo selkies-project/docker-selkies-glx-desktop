@@ -27,7 +27,8 @@
 ARG BASE_IMAGE="ghcr.io/selkies-project/selkies/base:latest-ubuntu26.04"
 ARG DISTRIB_IMAGE="ubuntu"
 ARG DISTRIB_RELEASE="26.04"
-# The Selkies revision the shared helper scripts are taken from
+# The Selkies revision the shared helper scripts are taken from, which CI sets
+# to the one the base was built from
 ARG SELKIES_REF="main"
 # The proot-next revision Steam's installer is taken from; it installs the latest
 # proot-next release as Steam's bubblewrap stand-in
@@ -123,6 +124,11 @@ COPY --from=kwinx11build --chown=1000:1000 /build/debs /tmp/kwin-x11-debs
 # The patched kwin-x11 then replaces the packaged one: the dpkg -i takes only
 # the rebuilt debs whose package the install put on the system, in one
 # invocation so dpkg orders them itself.
+# The upstream states the layers from here fetch from, which CI reads before the
+# build: a change rebuilds the layer that fetches it where a build cache would
+# hand back the last build's. The distribution archive's state first, then each
+# floating source above its layer; empty values take the newest.
+ARG DISTRIB_ARCHIVE=""
 RUN apt-get clean && apt-get update && apt-get install --no-install-recommends -y \
         plasma-desktop \
         plasma-workspace \
@@ -215,6 +221,7 @@ RUN mkdir -pm755 /etc/xdg && \
 # google-chrome.sources to trust a key it carries itself, and writes one on a
 # first install; the entry here is named apart from it and the package's
 # defaults file keeps it from writing its own.
+ARG BROWSER_ARCHIVES=""
 RUN mkdir -pm755 /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d && \
     fetch-verified key "https://packages.mozilla.org/apt/repo-signing-key.gpg" \
         35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3 /etc/apt/keyrings/packages.mozilla.org.asc && \
@@ -300,6 +307,8 @@ RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architectu
 # from its own repository, where it is released continuously and the packaged
 # copy is always behind: its newest commit, each file checked against the hash
 # GitHub names for it there.
+ARG WINE_ARCHIVE=""
+ARG WINETRICKS_REF=""
 RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
         dpkg --add-architecture i386 && \
         mkdir -pm755 /etc/apt/keyrings && \
@@ -310,7 +319,7 @@ RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architectu
             "${codename}" > "/etc/apt/sources.list.d/winehq-${codename}.sources" && \
         apt-get clean && apt-get update && \
         apt-get install --install-recommends -y winehq-staging && \
-        fetch-verified file Winetricks/winetricks master src/winetricks /usr/bin/winetricks \
+        fetch-verified file Winetricks/winetricks "${WINETRICKS_REF:-master}" src/winetricks /usr/bin/winetricks \
             src/winetricks.bash-completion /usr/share/bash-completion/completions/winetricks && \
         chmod -f 755 /usr/bin/winetricks; \
     fi && \
@@ -321,9 +330,11 @@ RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architectu
 # newest release is read from GitHub at build time and checked against the
 # digest GitHub records for it. x86 only, as Steam and Wine are; Heroic
 # publishes no Linux package for another architecture.
+ARG LUTRIS_VERSION=""
+ARG HEROIC_VERSION=""
 RUN --mount=type=secret,id=github_token,uid=1000 if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
-        fetch-verified release lutris/lutris latest 'lutris_{version}_all.deb' /tmp/lutris.deb && \
-        fetch-verified release Heroic-Games-Launcher/HeroicGamesLauncher latest \
+        fetch-verified release lutris/lutris "${LUTRIS_VERSION:-latest}" 'lutris_{version}_all.deb' /tmp/lutris.deb && \
+        fetch-verified release Heroic-Games-Launcher/HeroicGamesLauncher "${HEROIC_VERSION:-latest}" \
             "Heroic-{version}-linux-$(dpkg --print-architecture).deb" /tmp/heroic.deb && \
         apt-get clean && apt-get update && \
         apt-get install --no-install-recommends -y /tmp/lutris.deb /tmp/heroic.deb && \

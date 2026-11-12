@@ -144,6 +144,43 @@ jobs:
         # The proot-apps layer is cached by it, so a new release rebuilds that
         # layer where the cache would hand back the last one's tools
         run: echo "version=$(gh api repos/linuxserver/proot-apps/releases/latest --jq .tag_name)" | tee -a "$GITHUB_OUTPUT"
+      - name: Read the upstream states the other floating layers take
+        id: upstream
+        env:
+          DISTRIB_RELEASE: ${{ env.DISTRIB_RELEASE }}
+          BASE_TAG: ${{ inputs.base_tag || 'latest-ubuntu26.04' }}
+          GH_TOKEN: ${{ github.token }}
+        # Each is cached by the state of what it fetches, so a change upstream
+        # rebuilds it where the cache would hand back the last build's: the
+        # archive (its release files' dates, read in the distribution's image on
+        # this architecture), the browsers' and WineHQ's apt repositories,
+        # winetricks' newest commit, the Lutris and Heroic releases, and the
+        # Selkies revision the base was built from (the latest release under a
+        # latest-* base, the release a versioned base names, main's head
+        # otherwise), which the helper scripts are taken from
+        run: |
+          set -euo pipefail
+          archive_date() { curl -fsSL --retry 5 "$1" | sed -n 's/^Date: //p' | head -n 1; }
+          distrib="$(docker run --rm "ubuntu:${DISTRIB_RELEASE}" sh -c '
+            apt-get update -qq > /dev/null
+            . /etc/os-release
+            echo "$(sed -n "s/^Date: //p" /var/lib/apt/lists/*Release | sort | sha256sum | cut -c1-16) ${VERSION_CODENAME}"')"
+          read -r archive codename <<< "${distrib}"
+          [ -n "${archive}" ] && [ -n "${codename}" ]
+          case "${BASE_TAG}" in
+            latest-*) selkies="$(gh api repos/selkies-project/selkies/releases/latest --jq .tag_name)" ;;
+            main-*) selkies="$(gh api repos/selkies-project/selkies/commits/main --jq .sha)" ;;
+            *) selkies="${BASE_TAG%-ubuntu*}" ;;
+          esac
+          {
+            echo "selkies_ref=${selkies}"
+            echo "archive=${archive}"
+            echo "browsers=$(archive_date https://packages.mozilla.org/apt/dists/mozilla/InRelease); $(archive_date https://dl.google.com/linux/chrome/deb/dists/stable/InRelease)"
+            echo "wine=$(archive_date "https://dl.winehq.org/wine-builds/ubuntu/dists/${codename}/InRelease")"
+            echo "winetricks=$(gh api repos/Winetricks/winetricks/commits/master --jq .sha)"
+            echo "lutris=$(gh api repos/lutris/lutris/releases/latest --jq .tag_name)"
+            echo "heroic=$(gh api repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest --jq .tag_name)"
+          } | tee -a "$GITHUB_OUTPUT"
       - name: Build and push by digest
         id: first
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -156,6 +193,13 @@ jobs:
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
             PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
             PROOT_APPS_VERSION=${{ steps.papps.outputs.version }}
+            SELKIES_REF=${{ steps.upstream.outputs.selkies_ref }}
+            DISTRIB_ARCHIVE=${{ steps.upstream.outputs.archive }}
+            BROWSER_ARCHIVES=${{ steps.upstream.outputs.browsers }}
+            WINE_ARCHIVE=${{ steps.upstream.outputs.wine }}
+            WINETRICKS_REF=${{ steps.upstream.outputs.winetricks }}
+            LUTRIS_VERSION=${{ steps.upstream.outputs.lutris }}
+            HEROIC_VERSION=${{ steps.upstream.outputs.heroic }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}
@@ -178,6 +222,13 @@ jobs:
             KWIN_X11_VERSION=${{ steps.kwin.outputs.kwin_x11 }}
             PROOT_NEXT_VERSION=${{ steps.proot.outputs.version }}
             PROOT_APPS_VERSION=${{ steps.papps.outputs.version }}
+            SELKIES_REF=${{ steps.upstream.outputs.selkies_ref }}
+            DISTRIB_ARCHIVE=${{ steps.upstream.outputs.archive }}
+            BROWSER_ARCHIVES=${{ steps.upstream.outputs.browsers }}
+            WINE_ARCHIVE=${{ steps.upstream.outputs.wine }}
+            WINETRICKS_REF=${{ steps.upstream.outputs.winetricks }}
+            LUTRIS_VERSION=${{ steps.upstream.outputs.lutris }}
+            HEROIC_VERSION=${{ steps.upstream.outputs.heroic }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.ref == 'refs/heads/main' }}
           # For the GitHub lookups behind the Dockerfile's download checks
           secrets: github_token=${{ secrets.GITHUB_TOKEN }}
